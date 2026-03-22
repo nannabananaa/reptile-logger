@@ -1,0 +1,105 @@
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { addReptile, generateId } from '../utils/storage';
+
+export default function AddReptile() {
+  const navigate = useNavigate();
+  const [name, setName] = useState('');
+  const [species, setSpecies] = useState('');
+  const [dob, setDob] = useState('');
+  const [photo, setPhoto] = useState(null);
+
+  function handlePhoto(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setPhoto(reader.result);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function handleSave(e) {
+    e.preventDefault();
+    if (!name.trim()) return;
+
+    addReptile({
+      id: generateId(),
+      name: name.trim(),
+      species: species.trim(),
+      dob: dob || null,
+      photo,
+      logs: [],
+    });
+
+    navigate('/');
+  }
+
+  return (
+    <main className="page">
+      <form className="form" onSubmit={handleSave}>
+        <div className="form-group">
+          <label className="form-label">Photo</label>
+          <div className="photo-upload">
+            {photo ? (
+              <img src={photo} alt="Preview" className="photo-upload-preview" />
+            ) : (
+              <div className="photo-upload-placeholder">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <path d="M21 15l-5-5L5 21" />
+                </svg>
+                <span>Tap to add photo</span>
+              </div>
+            )}
+            <input type="file" accept="image/*" onChange={handlePhoto} />
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Name</label>
+          <input
+            className="form-input"
+            type="text"
+            placeholder="e.g. Noodle"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoFocus
+          />
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Species / Morph</label>
+          <input
+            className="form-input"
+            type="text"
+            placeholder="e.g. Ball Python, Banana Pastel"
+            value={species}
+            onChange={(e) => setSpecies(e.target.value)}
+          />
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Date of Birth</label>
+          <input
+            className="form-input"
+            type="date"
+            value={dob}
+            onChange={(e) => setDob(e.target.value)}
+          />
+        </div>
+
+        <div className="form-actions">
+          <button type="button" className="btn btn-secondary" onClick={() => navigate('/')}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-primary">
+            Save
+          </button>
+        </div>
+      </form>
+    </main>
+  );
+}
