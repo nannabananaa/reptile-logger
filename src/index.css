@@ -1019,6 +1019,126 @@ img {
   flex: 1;
 }
 
+/* ─── Auth Pages ─── */
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: var(--bg-primary);
+}
+
+.auth-container {
+  width: 100%;
+  max-width: 380px;
+  animation: fadeIn 0.25s ease;
+}
+
+.auth-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.auth-logo {
+  font-size: 56px;
+  margin-bottom: 12px;
+}
+
+.auth-title {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  color: var(--text-primary);
+}
+
+.auth-subtitle {
+  font-size: 15px;
+  color: var(--text-secondary);
+  margin-top: 6px;
+}
+
+.auth-error {
+  padding: 12px 16px;
+  background: rgba(232, 84, 84, 0.12);
+  border: 1px solid rgba(232, 84, 84, 0.3);
+  border-radius: var(--radius-sm);
+  color: #e85454;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.auth-success {
+  padding: 12px 16px;
+  background: rgba(107, 196, 107, 0.12);
+  border: 1px solid rgba(107, 196, 107, 0.3);
+  border-radius: var(--radius-sm);
+  color: #6bc46b;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.btn-auth {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.btn-auth:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.auth-footer {
+  text-align: center;
+  margin-top: 24px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.auth-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.auth-link:active {
+  color: var(--accent-hover);
+}
+
+.auth-loading {
+  text-align: center;
+}
+
+.auth-loading .auth-logo {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+
+/* ─── Topbar Logout ─── */
+.topbar-logout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 10px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  margin-left: auto;
+}
+
+.topbar-logout:active {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
 /* ─── Responsive ─── */
 @media (min-width: 480px) {
   .reptile-grid {

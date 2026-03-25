@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { getReptiles, deleteReptile, getLastLogDate, timeAgo } from '../utils/storage';
 
 export default function HomePage() {
@@ -7,10 +7,11 @@ export default function HomePage() {
   const [menuId, setMenuId] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     setReptiles(getReptiles());
-  }, []);
+  }, [location]);
 
   function handleDelete() {
     deleteReptile(deleteId);
