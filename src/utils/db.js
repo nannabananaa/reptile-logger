@@ -1,84 +1,115 @@
-const REPTILES_KEY = 'reptiles';
+import { supabase } from './supabase';
 
-function readReptiles() {
-  try {
-    const data = localStorage.getItem(REPTILES_KEY);
-    return data ? JSON.parse(data) : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeReptiles(reptiles) {
-  localStorage.setItem(REPTILES_KEY, JSON.stringify(reptiles));
-}
-
-function generateId() {
-  return crypto.randomUUID();
+async function getUserId() {
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) throw new Error('Not authenticated');
+  return user.id;
 }
 
 export async function fetchReptiles() {
-  return readReptiles();
+  const userId = await getUserId();
+  const { data, error } = await supabase
+    .from('reptiles')
+    .select('*, logs(created_at)')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data;
 }
 
 export async function fetchReptileById(id) {
-  return readReptiles().find((r) => r.id === id) || null;
+  const { data, error } = await supabase
+    .from('reptiles')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (error) throw error;
+  return data;
 }
 
 export async function fetchLogs(reptileId) {
-  const reptile = readReptiles().find((r) => r.id === reptileId);
-  return reptile ? (reptile.logs || []) : [];
+  const { data, error } = await supabase
+    .from('logs')
+    .select('*')
+    .eq('reptile_id', reptileId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data;
 }
 
 export async function createReptile({ name, species, dob, photo }) {
-  const reptiles = readReptiles();
-  const newReptile = {
-    id: generateId(),
-    name,
-    species: species || '',
-    dob: dob || null,
-    photo: photo || null,
-    logs: [],
-    created_at: new Date().toISOString(),
-  };
-  reptiles.push(newReptile);
-  writeReptiles(reptiles);
-  console.log('Reptile saved. Total reptiles:', reptiles.length);
-  return newReptile;
+  const userId = await getUserId();
+  const { data, error } = await supabase
+    .from('reptiles')
+    .insert({
+      user_id: userId,
+      name,
+      species: species || '',
+      dob: dob || null,
+      photo: photo || null,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
 }
 
 export async function updateReptileById(id, updates) {
-  const reptiles = readReptiles();
-  const idx = reptiles.findIndex((r) => r.id === id);
-  if (idx === -1) throw new Error('Reptile not found');
-  reptiles[idx] = { ...reptiles[idx], ...updates };
-  writeReptiles(reptiles);
-  return reptiles[idx];
+  const { data, error } = await supabase
+    .from('reptiles')
+    .update({
+      name: updates.name,
+      species: updates.species,
+      dob: updates.dob,
+      photo: updates.photo,
+    })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
 }
 
 export async function deleteReptileById(id) {
-  const reptiles = readReptiles().filter((r) => r.id !== id);
-  writeReptiles(reptiles);
+  const { error } = await supabase
+    .from('reptiles')
+    .delete()
+    .eq('id', id);
+
+  if (error) throw error;
 }
 
 export async function createLog(reptileId, log) {
-  const reptiles = readReptiles();
-  const reptile = reptiles.find((r) => r.id === reptileId);
-  if (!reptile) throw new Error('Reptile not found');
-  const newLog = { id: generateId(), created_at: new Date().toISOString(), ...log };
-  reptile.logs.push(newLog);
-  writeReptiles(reptiles);
-  return newLog;
+  const userId = await getUserId();
+  const { data, error } = await supabase
+    .from('logs')
+    .insert({
+      reptile_id: reptileId,
+      user_id: userId,
+      temperature: log.temperature,
+      humidity: log.humidity,
+      weight: log.weight,
+      fed: log.fed,
+      vitamins: log.vitamins,
+      notes: log.notes,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
 }
 
 export async function deleteLogById(logId) {
-  const reptiles = readReptiles();
-  for (const reptile of reptiles) {
-    const before = reptile.logs.length;
-    reptile.logs = (reptile.logs || []).filter((l) => l.id !== logId);
-    if (reptile.logs.length < before) {
-      writeReptiles(reptiles);
-      return;
-    }
-  }
+  const { error } = await supabase
+    .from('logs')
+    .delete()
+    .eq('id', logId);
+
+  if (error) throw error;
 }
