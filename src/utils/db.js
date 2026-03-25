@@ -8,13 +8,31 @@ async function getUserId() {
 
 export async function fetchReptiles() {
   const userId = await getUserId();
+  console.log('[DB] fetchReptiles for user_id:', userId);
+
+  // First try a simple query without the logs join
+  const { data: simpleData, error: simpleError } = await supabase
+    .from('reptiles')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  console.log('[DB] Simple query (no join):', { count: simpleData?.length, error: simpleError, reptiles: simpleData?.map(r => ({ id: r.id, name: r.name, user_id: r.user_id })) });
+
+  // Now try with the logs join
   const { data, error } = await supabase
     .from('reptiles')
     .select('*, logs(created_at)')
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
 
-  if (error) throw error;
+  console.log('[DB] Join query result:', { count: data?.length, error, reptiles: data?.map(r => ({ id: r.id, name: r.name, logs: r.logs?.length })) });
+
+  if (error) {
+    console.error('[DB] fetchReptiles error, falling back to simple query:', error);
+    if (!simpleError) return simpleData.map(r => ({ ...r, logs: [] }));
+    throw error;
+  }
   return data;
 }
 
@@ -42,6 +60,7 @@ export async function fetchLogs(reptileId) {
 
 export async function createReptile({ name, species, dob, photo }) {
   const userId = await getUserId();
+  console.log('[DB] createReptile for user_id:', userId, 'name:', name);
   const { data, error } = await supabase
     .from('reptiles')
     .insert({
@@ -54,7 +73,11 @@ export async function createReptile({ name, species, dob, photo }) {
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) {
+    console.error('[DB] createReptile error:', error);
+    throw error;
+  }
+  console.log('[DB] createReptile success, id:', data.id);
   return data;
 }
 
