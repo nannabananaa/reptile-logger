@@ -1,63 +1,5 @@
-const REPTILES_KEY = 'reptiles';
 const VITAMINS_KEY = 'vitamins';
 const DEFAULT_VITAMINS = ['Calcium', 'D3', 'Multivitamin'];
-
-export function getReptiles() {
-  try {
-    const data = localStorage.getItem(REPTILES_KEY);
-    return data ? JSON.parse(data) : [];
-  } catch {
-    return [];
-  }
-}
-
-export function saveReptiles(reptiles) {
-  localStorage.setItem(REPTILES_KEY, JSON.stringify(reptiles));
-}
-
-export function addReptile(reptile) {
-  const reptiles = getReptiles();
-  reptiles.push(reptile);
-  saveReptiles(reptiles);
-  return reptiles;
-}
-
-export function getReptileById(id) {
-  return getReptiles().find((r) => r.id === id) || null;
-}
-
-export function updateReptile(id, updates) {
-  const reptiles = getReptiles();
-  const idx = reptiles.findIndex((r) => r.id === id);
-  if (idx === -1) return null;
-  reptiles[idx] = { ...reptiles[idx], ...updates };
-  saveReptiles(reptiles);
-  return reptiles[idx];
-}
-
-export function deleteReptile(id) {
-  const reptiles = getReptiles().filter((r) => r.id !== id);
-  saveReptiles(reptiles);
-  return reptiles;
-}
-
-export function addLog(reptileId, log) {
-  const reptiles = getReptiles();
-  const reptile = reptiles.find((r) => r.id === reptileId);
-  if (!reptile) return null;
-  reptile.logs.push(log);
-  saveReptiles(reptiles);
-  return reptile;
-}
-
-export function deleteLog(reptileId, logId) {
-  const reptiles = getReptiles();
-  const reptile = reptiles.find((r) => r.id === reptileId);
-  if (!reptile) return null;
-  reptile.logs = reptile.logs.filter((l) => l.id !== logId);
-  saveReptiles(reptiles);
-  return reptile;
-}
 
 export function getVitamins() {
   try {
@@ -70,10 +12,6 @@ export function getVitamins() {
 
 export function saveVitamins(vitamins) {
   localStorage.setItem(VITAMINS_KEY, JSON.stringify(vitamins));
-}
-
-export function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
 export function calculateAge(dob) {
@@ -119,7 +57,7 @@ export function getLastLogDate(reptile) {
   const logs = reptile.logs || [];
   if (logs.length === 0) return null;
   return logs.reduce((latest, log) => {
-    const d = new Date(log.timestamp);
+    const d = new Date(log.created_at);
     return d > latest ? d : latest;
   }, new Date(0)).toISOString();
 }

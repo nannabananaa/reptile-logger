@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { addReptile, generateId } from '../utils/storage';
+import { createReptile } from '../utils/db';
 
 export default function AddReptile() {
   const navigate = useNavigate();
@@ -8,6 +8,8 @@ export default function AddReptile() {
   const [species, setSpecies] = useState('');
   const [dob, setDob] = useState('');
   const [photo, setPhoto] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   function handlePhoto(e) {
     const file = e.target.files?.[0];
@@ -20,25 +22,33 @@ export default function AddReptile() {
     reader.readAsDataURL(file);
   }
 
-  function handleSave(e) {
+  async function handleSave(e) {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || saving) return;
 
-    addReptile({
-      id: generateId(),
-      name: name.trim(),
-      species: species.trim(),
-      dob: dob || null,
-      photo,
-      logs: [],
-    });
+    setSaving(true);
+    setError('');
 
-    navigate('/');
+    try {
+      await createReptile({
+        name: name.trim(),
+        species: species.trim(),
+        dob: dob || null,
+        photo,
+      });
+      navigate('/');
+    } catch (err) {
+      console.error('Failed to save reptile:', err);
+      setError('Failed to save. Please try again.');
+      setSaving(false);
+    }
   }
 
   return (
     <main className="page">
       <form className="form" onSubmit={handleSave}>
+        {error && <div className="auth-error">{error}</div>}
+
         <div className="form-group">
           <label className="form-label">Photo</label>
           <div className="photo-upload">
@@ -95,8 +105,8 @@ export default function AddReptile() {
           <button type="button" className="btn btn-secondary" onClick={() => navigate('/')}>
             Cancel
           </button>
-          <button type="submit" className="btn btn-primary">
-            Save
+          <button type="submit" className="btn btn-primary" disabled={saving}>
+            {saving ? 'Saving...' : 'Save'}
           </button>
         </div>
       </form>

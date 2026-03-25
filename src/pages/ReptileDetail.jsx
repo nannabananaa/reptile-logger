@@ -4,10 +4,10 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import {
-  getReptileById, updateReptile, deleteReptile,
-  addLog, deleteLog, getVitamins, saveVitamins,
-  generateId, calculateAge,
-} from '../utils/storage';
+  fetchReptileById, fetchLogs, updateReptileById,
+  deleteReptileById, createLog, deleteLogById,
+} from '../utils/db';
+import { getVitamins, saveVitamins, calculateAge } from '../utils/storage';
 
 const CHART_COLORS = {
   temperature: '#c4a44a',
@@ -20,6 +20,8 @@ export default function ReptileDetail() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [reptile, setReptile] = useState(null);
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('logs');
   const [filter, setFilter] = useState('all');
   const [showLogForm, setShowLogForm] = useState(false);
@@ -27,23 +29,34 @@ export default function ReptileDetail() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLogId, setDeleteLogId] = useState(null);
 
-  const reload = useCallback(() => {
-    setReptile(getReptileById(id));
+  const reload = useCallback(async () => {
+    try {
+      const [reptileData, logsData] = await Promise.all([
+        fetchReptileById(id),
+        fetchLogs(id),
+      ]);
+      setReptile(reptileData);
+      setLogs(logsData);
+    } catch (err) {
+      console.error('Failed to load reptile:', err);
+      setReptile(null);
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
 
   useEffect(() => { reload(); }, [reload]);
 
   const filteredLogs = useMemo(() => {
-    if (!reptile) return [];
-    const logs = [...(reptile.logs || [])].sort(
-      (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
+    const sorted = [...logs].sort(
+      (a, b) => new Date(b.created_at) - new Date(a.created_at)
     );
-    if (filter === 'all') return logs;
+    if (filter === 'all') return sorted;
     const days = filter === '7d' ? 7 : 30;
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
-    return logs.filter((l) => new Date(l.timestamp) >= cutoff);
-  }, [reptile, filter]);
+    return sorted.filter((l) => new Date(l.created_at) >= cutoff);
+  }, [logs, filter]);
 
   const summary = useMemo(() => {
     const fedCount = filteredLogs.filter((l) => l.fed).length;
@@ -57,16 +70,26 @@ export default function ReptileDetail() {
   }, [filteredLogs]);
 
   const chartData = useMemo(() => {
-    if (!reptile) return [];
-    return [...(reptile.logs || [])]
-      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+    return [...logs]
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
       .map((l) => ({
-        date: new Date(l.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        date: new Date(l.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         temperature: l.temperature,
         humidity: l.humidity,
         weight: l.weight,
       }));
-  }, [reptile]);
+  }, [logs]);
+
+  if (loading) {
+    return (
+      <main className="page">
+        <div className="empty-state">
+          <div className="empty-state-icon">🦎</div>
+          <p className="empty-state-text">Loading...</p>
+        </div>
+      </main>
+    );
+  }
 
   if (!reptile) {
     return (
@@ -83,15 +106,23 @@ export default function ReptileDetail() {
   const age = calculateAge(reptile.dob);
   const hasChartData = chartData.length >= 2;
 
-  function handleDeleteReptile() {
-    deleteReptile(id);
-    navigate('/');
+  async function handleDeleteReptile() {
+    try {
+      await deleteReptileById(id);
+      navigate('/');
+    } catch (err) {
+      console.error('Failed to delete reptile:', err);
+    }
   }
 
-  function handleDeleteLog(logId) {
-    deleteLog(id, logId);
-    setDeleteLogId(null);
-    reload();
+  async function handleDeleteLog(logId) {
+    try {
+      await deleteLogById(logId);
+      setDeleteLogId(null);
+      await reload();
+    } catch (err) {
+      console.error('Failed to delete log:', err);
+    }
   }
 
   return (
@@ -305,7 +336,7 @@ function ChartCard({ title, dataKey, color, data, unit }) {
 
 /* ── Log Card ── */
 function LogCard({ log, onDelete }) {
-  const date = new Date(log.timestamp);
+  const date = new Date(log.created_at);
   const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
@@ -369,6 +400,7 @@ function LogFormModal({ reptileId, onClose, onSave }) {
   const [vitaminList, setVitaminList] = useState(getVitamins());
   const [showVitaminEditor, setShowVitaminEditor] = useState(false);
   const [newVitamin, setNewVitamin] = useState('');
+  const [saving, setSaving] = useState(false);
 
   function toggleVitamin(v) {
     setSelectedVitamins((prev) =>
@@ -392,19 +424,25 @@ function LogFormModal({ reptileId, onClose, onSave }) {
     setSelectedVitamins((prev) => prev.filter((x) => x !== v));
   }
 
-  function handleSave(e) {
+  async function handleSave(e) {
     e.preventDefault();
-    addLog(reptileId, {
-      id: generateId(),
-      timestamp: new Date().toISOString(),
-      temperature: temperature ? Number(temperature) : null,
-      humidity: humidity ? Number(humidity) : null,
-      weight: weight ? Number(weight) : null,
-      fed,
-      vitamins: selectedVitamins,
-      notes: notes.trim() || null,
-    });
-    onSave();
+    if (saving) return;
+    setSaving(true);
+
+    try {
+      await createLog(reptileId, {
+        temperature: temperature ? Number(temperature) : null,
+        humidity: humidity ? Number(humidity) : null,
+        weight: weight ? Number(weight) : null,
+        fed,
+        vitamins: selectedVitamins,
+        notes: notes.trim() || null,
+      });
+      onSave();
+    } catch (err) {
+      console.error('Failed to save log:', err);
+      setSaving(false);
+    }
   }
 
   return (
@@ -499,7 +537,9 @@ function LogFormModal({ reptileId, onClose, onSave }) {
 
           <div className="form-actions">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary">Save Log</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? 'Saving...' : 'Save Log'}
+            </button>
           </div>
         </form>
       </div>
@@ -513,6 +553,7 @@ function EditReptileModal({ reptile, onClose, onSave }) {
   const [species, setSpecies] = useState(reptile.species || '');
   const [dob, setDob] = useState(reptile.dob || '');
   const [photo, setPhoto] = useState(reptile.photo);
+  const [saving, setSaving] = useState(false);
 
   function handlePhoto(e) {
     const file = e.target.files?.[0];
@@ -522,16 +563,23 @@ function EditReptileModal({ reptile, onClose, onSave }) {
     reader.readAsDataURL(file);
   }
 
-  function handleSave(e) {
+  async function handleSave(e) {
     e.preventDefault();
-    if (!name.trim()) return;
-    updateReptile(reptile.id, {
-      name: name.trim(),
-      species: species.trim(),
-      dob: dob || null,
-      photo,
-    });
-    onSave();
+    if (!name.trim() || saving) return;
+    setSaving(true);
+
+    try {
+      await updateReptileById(reptile.id, {
+        name: name.trim(),
+        species: species.trim(),
+        dob: dob || null,
+        photo,
+      });
+      onSave();
+    } catch (err) {
+      console.error('Failed to update reptile:', err);
+      setSaving(false);
+    }
   }
 
   return (
@@ -578,7 +626,9 @@ function EditReptileModal({ reptile, onClose, onSave }) {
           </div>
           <div className="form-actions">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary">Save</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? 'Saving...' : 'Save'}
+            </button>
           </div>
         </form>
       </div>

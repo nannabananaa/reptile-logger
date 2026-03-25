@@ -1,23 +1,51 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { getReptiles, deleteReptile, getLastLogDate, timeAgo } from '../utils/storage';
+import { fetchReptiles, deleteReptileById } from '../utils/db';
+import { getLastLogDate, timeAgo } from '../utils/storage';
 
 export default function HomePage() {
   const [reptiles, setReptiles] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [menuId, setMenuId] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
 
-  useEffect(() => {
-    setReptiles(getReptiles());
-  }, [location]);
+  const loadReptiles = useCallback(async () => {
+    try {
+      const data = await fetchReptiles();
+      setReptiles(data);
+    } catch (err) {
+      console.error('Failed to load reptiles:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  function handleDelete() {
-    deleteReptile(deleteId);
-    setDeleteId(null);
-    setMenuId(null);
-    setReptiles(getReptiles());
+  useEffect(() => {
+    loadReptiles();
+  }, [loadReptiles, location]);
+
+  async function handleDelete() {
+    try {
+      await deleteReptileById(deleteId);
+      setDeleteId(null);
+      setMenuId(null);
+      await loadReptiles();
+    } catch (err) {
+      console.error('Failed to delete reptile:', err);
+    }
+  }
+
+  if (loading) {
+    return (
+      <main className="page">
+        <div className="empty-state">
+          <div className="empty-state-icon">🦎</div>
+          <p className="empty-state-text">Loading...</p>
+        </div>
+      </main>
+    );
   }
 
   return (
