@@ -14,15 +14,17 @@ export default function HomePage() {
   const loadReptiles = useCallback(async () => {
     try {
       const data = await fetchReptiles();
+      console.log('[HomePage] Loaded reptiles:', data.length, data.map(r => r.name));
       setReptiles(data);
     } catch (err) {
-      console.error('Failed to load reptiles:', err);
+      console.error('[HomePage] Failed to load reptiles:', err);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    console.log('[HomePage] useEffect triggered, pathname:', location.pathname);
     loadReptiles();
   }, [loadReptiles, location]);
 

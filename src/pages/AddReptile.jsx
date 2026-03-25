@@ -2,6 +2,24 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createReptile } from '../utils/db';
 
+function compressPhoto(dataUrl, maxWidth = 600) {
+  return new Promise((resolve) => {
+    if (!dataUrl) { resolve(null); return; }
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const scale = Math.min(1, maxWidth / img.width);
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.7));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 export default function AddReptile() {
   const navigate = useNavigate();
   const [name, setName] = useState('');
@@ -24,22 +42,26 @@ export default function AddReptile() {
 
   async function handleSave(e) {
     e.preventDefault();
+    console.log('[AddReptile] handleSave fired, name:', name.trim(), 'saving:', saving);
     if (!name.trim() || saving) return;
 
     setSaving(true);
     setError('');
 
     try {
-      await createReptile({
+      const compressed = await compressPhoto(photo);
+      console.log('[AddReptile] Photo compressed, calling createReptile...');
+      const result = await createReptile({
         name: name.trim(),
         species: species.trim(),
         dob: dob || null,
-        photo,
+        photo: compressed,
       });
+      console.log('[AddReptile] createReptile succeeded:', result.id);
       navigate('/');
     } catch (err) {
-      console.error('Failed to save reptile:', err);
-      setError('Failed to save. Please try again.');
+      console.error('[AddReptile] Save failed:', err);
+      setError(`Failed to save: ${err.message}`);
       setSaving(false);
     }
   }
