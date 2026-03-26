@@ -6,6 +6,18 @@ async function getUserId() {
   return session.user.id;
 }
 
+async function fetchProfilesByIds(ids) {
+  if (ids.length === 0) return {};
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, display_name, email')
+    .in('id', ids);
+  if (error) throw error;
+  const map = {};
+  for (const p of data) map[p.id] = p;
+  return map;
+}
+
 /* ── Profile ── */
 
 export async function fetchProfile() {
@@ -64,14 +76,36 @@ export async function fetchReptiles() {
 export async function fetchSharedReptiles() {
   const userId = await getUserId();
 
-  const { data, error } = await supabase
+  // Step 1: get shared_reptiles rows
+  const { data: shares, error } = await supabase
     .from('shared_reptiles')
-    .select('*, reptile:reptiles(*, logs(created_at)), owner:profiles!shared_reptiles_owner_id_fkey(display_name, email)')
+    .select('*')
     .eq('shared_with_id', userId)
     .eq('status', 'accepted');
 
   if (error) throw error;
-  return data;
+  if (shares.length === 0) return [];
+
+  // Step 2: fetch the reptiles with their logs
+  const reptileIds = [...new Set(shares.map((s) => s.reptile_id))];
+  const { data: reptiles, error: rErr } = await supabase
+    .from('reptiles')
+    .select('*, logs(created_at)')
+    .in('id', reptileIds);
+  if (rErr) throw rErr;
+  const reptileMap = {};
+  for (const r of reptiles) reptileMap[r.id] = r;
+
+  // Step 3: fetch owner profiles
+  const ownerIds = [...new Set(shares.map((s) => s.owner_id))];
+  const profileMap = await fetchProfilesByIds(ownerIds);
+
+  // Combine
+  return shares.map((s) => ({
+    ...s,
+    reptile: reptileMap[s.reptile_id] || null,
+    owner: profileMap[s.owner_id] || null,
+  }));
 }
 
 export async function fetchReptileById(id) {
@@ -132,14 +166,22 @@ export async function deleteReptileById(id) {
 /* ── Logs ── */
 
 export async function fetchLogs(reptileId) {
-  const { data, error } = await supabase
+  const { data: logs, error } = await supabase
     .from('logs')
-    .select('*, profile:profiles(display_name)')
+    .select('*')
     .eq('reptile_id', reptileId)
     .order('created_at', { ascending: false });
 
   if (error) throw error;
-  return data;
+
+  // Fetch display names for all log authors
+  const userIds = [...new Set(logs.map((l) => l.user_id).filter(Boolean))];
+  const profileMap = await fetchProfilesByIds(userIds);
+
+  return logs.map((l) => ({
+    ...l,
+    profile: profileMap[l.user_id] || null,
+  }));
 }
 
 export async function createLog(reptileId, log) {
@@ -156,11 +198,14 @@ export async function createLog(reptileId, log) {
       vitamins: log.vitamins,
       notes: log.notes,
     })
-    .select('*, profile:profiles(display_name)')
+    .select()
     .single();
 
   if (error) throw error;
-  return data;
+
+  // Attach profile
+  const profileMap = await fetchProfilesByIds([userId]);
+  return { ...data, profile: profileMap[userId] || null };
 }
 
 export async function deleteLogById(logId) {
@@ -196,22 +241,34 @@ export async function shareReptile(reptileId, sharedWithId) {
       shared_with_id: sharedWithId,
       status: 'pending',
     })
-    .select('*, shared_with:profiles!shared_reptiles_shared_with_id_fkey(display_name, email)')
+    .select()
     .single();
 
   if (error) throw error;
-  return data;
+
+  // Attach shared_with profile
+  const profileMap = await fetchProfilesByIds([sharedWithId]);
+  return { ...data, shared_with: profileMap[sharedWithId] || null };
 }
 
 export async function fetchSharesForReptile(reptileId) {
-  const { data, error } = await supabase
+  const { data: shares, error } = await supabase
     .from('shared_reptiles')
-    .select('*, shared_with:profiles!shared_reptiles_shared_with_id_fkey(display_name, email)')
+    .select('*')
     .eq('reptile_id', reptileId)
     .order('created_at', { ascending: false });
 
   if (error) throw error;
-  return data;
+  if (shares.length === 0) return [];
+
+  // Fetch shared_with profiles
+  const sharedWithIds = [...new Set(shares.map((s) => s.shared_with_id))];
+  const profileMap = await fetchProfilesByIds(sharedWithIds);
+
+  return shares.map((s) => ({
+    ...s,
+    shared_with: profileMap[s.shared_with_id] || null,
+  }));
 }
 
 export async function removeShare(shareId) {
@@ -225,14 +282,35 @@ export async function removeShare(shareId) {
 
 export async function fetchPendingInvites() {
   const userId = await getUserId();
-  const { data, error } = await supabase
+
+  const { data: invites, error } = await supabase
     .from('shared_reptiles')
-    .select('*, reptile:reptiles(name, photo), owner:profiles!shared_reptiles_owner_id_fkey(display_name)')
+    .select('*')
     .eq('shared_with_id', userId)
     .eq('status', 'pending');
 
   if (error) throw error;
-  return data;
+  if (invites.length === 0) return [];
+
+  // Fetch reptile names
+  const reptileIds = [...new Set(invites.map((i) => i.reptile_id))];
+  const { data: reptiles, error: rErr } = await supabase
+    .from('reptiles')
+    .select('id, name, photo')
+    .in('id', reptileIds);
+  if (rErr) throw rErr;
+  const reptileMap = {};
+  for (const r of reptiles) reptileMap[r.id] = r;
+
+  // Fetch owner profiles
+  const ownerIds = [...new Set(invites.map((i) => i.owner_id))];
+  const profileMap = await fetchProfilesByIds(ownerIds);
+
+  return invites.map((i) => ({
+    ...i,
+    reptile: reptileMap[i.reptile_id] || null,
+    owner: profileMap[i.owner_id] || null,
+  }));
 }
 
 export async function respondToInvite(shareId, accept) {
