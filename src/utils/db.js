@@ -243,7 +243,7 @@ export async function lookupProfileByEmail(email) {
   return data;
 }
 
-export async function shareReptile(reptileId, sharedWithId) {
+export async function shareReptile(reptileId, sharedWithId, sharedWithEmail) {
   const userId = await getUserId();
   const { data, error } = await supabase
     .from('shared_reptiles')
@@ -251,6 +251,7 @@ export async function shareReptile(reptileId, sharedWithId) {
       reptile_id: reptileId,
       owner_id: userId,
       shared_with_id: sharedWithId,
+      shared_with_email: sharedWithEmail,
       status: 'pending',
     })
     .select()

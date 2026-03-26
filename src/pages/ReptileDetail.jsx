@@ -456,7 +456,7 @@ function ShareModal({ reptileId, onClose }) {
         return;
       }
 
-      await shareReptile(reptileId, profile.id);
+      await shareReptile(reptileId, profile.id, profile.email);
       setEmail('');
       setMessage('Invite sent!');
       setMessageType('success');
