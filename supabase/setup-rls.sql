@@ -57,6 +57,8 @@ DROP POLICY IF EXISTS "Users can insert their own logs" ON logs;
 DROP POLICY IF EXISTS "Users can insert logs on shared reptiles" ON logs;
 DROP POLICY IF EXISTS "Users can update their own logs" ON logs;
 DROP POLICY IF EXISTS "Users can delete their own logs" ON logs;
+DROP POLICY IF EXISTS "Owner can delete any log on their reptiles" ON logs;
+DROP POLICY IF EXISTS "Shared users can delete logs on shared reptiles" ON logs;
 
 -- Owner can see all logs on their reptiles (regardless of who created them)
 CREATE POLICY "Users can view their own logs"
@@ -108,3 +110,26 @@ CREATE POLICY "Users can update their own logs"
 CREATE POLICY "Users can delete their own logs"
   ON logs FOR DELETE
   USING (auth.uid() = user_id);
+
+-- Reptile owner can delete any log on their reptiles
+CREATE POLICY "Owner can delete any log on their reptiles"
+  ON logs FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM reptiles
+      WHERE reptiles.id = logs.reptile_id
+        AND reptiles.user_id = auth.uid()
+    )
+  );
+
+-- Shared users can delete logs on reptiles shared with them
+CREATE POLICY "Shared users can delete logs on shared reptiles"
+  ON logs FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM shared_reptiles
+      WHERE shared_reptiles.reptile_id = logs.reptile_id
+        AND shared_reptiles.shared_with_id = auth.uid()
+        AND shared_reptiles.status = 'accepted'
+    )
+  );
