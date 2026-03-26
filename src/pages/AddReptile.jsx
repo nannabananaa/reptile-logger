@@ -42,7 +42,6 @@ export default function AddReptile() {
 
   async function handleSave(e) {
     e.preventDefault();
-    console.log('[AddReptile] handleSave fired, name:', name.trim(), 'saving:', saving);
     if (!name.trim() || saving) return;
 
     setSaving(true);
@@ -50,17 +49,15 @@ export default function AddReptile() {
 
     try {
       const compressed = await compressPhoto(photo);
-      console.log('[AddReptile] Photo compressed, calling createReptile...');
-      const result = await createReptile({
+      await createReptile({
         name: name.trim(),
         species: species.trim(),
         dob: dob || null,
         photo: compressed,
       });
-      console.log('[AddReptile] createReptile succeeded:', result.id);
       navigate('/');
     } catch (err) {
-      console.error('[AddReptile] Save failed:', err);
+      console.error('Failed to save reptile:', err);
       setError(`Failed to save: ${err.message}`);
       setSaving(false);
     }

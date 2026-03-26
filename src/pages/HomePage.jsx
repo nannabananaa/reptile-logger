@@ -6,6 +6,7 @@ import { getLastLogDate, timeAgo } from '../utils/storage';
 export default function HomePage() {
   const [reptiles, setReptiles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [menuId, setMenuId] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
   const navigate = useNavigate();
@@ -13,18 +14,18 @@ export default function HomePage() {
 
   const loadReptiles = useCallback(async () => {
     try {
+      setError(null);
       const data = await fetchReptiles();
-      console.log('[HomePage] Loaded reptiles:', data.length, data.map(r => r.name));
       setReptiles(data);
     } catch (err) {
-      console.error('[HomePage] Failed to load reptiles:', err);
+      console.error('Failed to load reptiles:', err);
+      setError(err.message || 'Failed to load reptiles');
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    console.log('[HomePage] useEffect triggered, pathname:', location.pathname);
     loadReptiles();
   }, [loadReptiles, location]);
 
@@ -52,7 +53,16 @@ export default function HomePage() {
 
   return (
     <main className="page">
-      {reptiles.length === 0 ? (
+      {error ? (
+        <div className="empty-state">
+          <div className="empty-state-icon">⚠️</div>
+          <p className="empty-state-text">Failed to load data</p>
+          <p className="empty-state-hint">{error}</p>
+          <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => { setLoading(true); loadReptiles(); }}>
+            Retry
+          </button>
+        </div>
+      ) : reptiles.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">🦎</div>
           <p className="empty-state-text">No reptiles yet</p>

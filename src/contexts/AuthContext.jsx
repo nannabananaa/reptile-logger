@@ -9,13 +9,11 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log('[Auth] Initial session:', session ? `user=${session.user.id} email=${session.user.email}` : 'none');
       setSession(session);
       setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      console.log('[Auth] State change:', _event, session ? `user=${session.user.id}` : 'no session');
       setSession(session);
     });
 
@@ -29,13 +27,14 @@ export function AuthProvider({ children }) {
 
   async function signIn(email, password) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (data?.user) {
-      console.log('[Auth] Login successful, user ID:', data.user.id, 'email:', data.user.email);
+    if (data?.session) {
+      setSession(data.session);
     }
     return { error };
   }
 
   async function signOut() {
+    setSession(null);
     const { error } = await supabase.auth.signOut();
     return { error };
   }
