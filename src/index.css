@@ -1139,6 +1139,132 @@ img {
   color: var(--text-primary);
 }
 
+/* ─── Section Title ─── */
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+/* ─── Pending Invites ─── */
+.invites-section {
+  margin-bottom: 20px;
+}
+
+.invites-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.invite-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--bg-card);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--accent);
+  box-shadow: 0 2px 8px var(--shadow);
+}
+
+.invite-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.invite-reptile {
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.invite-from {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.invite-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ─── Shared Badge ─── */
+.shared-badge {
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+/* ─── Logged By ─── */
+.log-logged-by {
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+/* ─── Share Modal ─── */
+.share-list {
+  margin-top: 24px;
+}
+
+.share-list-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+
+.share-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+}
+
+.share-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.share-item-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.share-status {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.share-status-pending {
+  color: var(--accent);
+}
+
+.share-status-accepted {
+  color: #6bc46b;
+}
+
 /* ─── Responsive ─── */
 @media (min-width: 480px) {
   .reptile-grid {

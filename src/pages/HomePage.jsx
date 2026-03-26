@@ -1,10 +1,12 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { fetchReptiles, deleteReptileById } from '../utils/db';
+import { fetchReptiles, fetchSharedReptiles, fetchPendingInvites, respondToInvite, deleteReptileById } from '../utils/db';
 import { getLastLogDate, timeAgo } from '../utils/storage';
 
 export default function HomePage() {
   const [reptiles, setReptiles] = useState([]);
+  const [sharedReptiles, setSharedReptiles] = useState([]);
+  const [pendingInvites, setPendingInvites] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [menuId, setMenuId] = useState(null);
@@ -12,13 +14,19 @@ export default function HomePage() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const loadReptiles = useCallback(async () => {
+  const loadData = useCallback(async () => {
     try {
       setError(null);
-      const data = await fetchReptiles();
-      setReptiles(data);
+      const [ownData, sharedData, invites] = await Promise.all([
+        fetchReptiles(),
+        fetchSharedReptiles(),
+        fetchPendingInvites(),
+      ]);
+      setReptiles(ownData);
+      setSharedReptiles(sharedData);
+      setPendingInvites(invites);
     } catch (err) {
-      console.error('Failed to load reptiles:', err);
+      console.error('Failed to load data:', err);
       setError(err.message || 'Failed to load reptiles');
     } finally {
       setLoading(false);
@@ -26,17 +34,26 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    loadReptiles();
-  }, [loadReptiles, location]);
+    loadData();
+  }, [loadData, location]);
 
   async function handleDelete() {
     try {
       await deleteReptileById(deleteId);
       setDeleteId(null);
       setMenuId(null);
-      await loadReptiles();
+      await loadData();
     } catch (err) {
       console.error('Failed to delete reptile:', err);
+    }
+  }
+
+  async function handleInviteResponse(shareId, accept) {
+    try {
+      await respondToInvite(shareId, accept);
+      await loadData();
+    } catch (err) {
+      console.error('Failed to respond to invite:', err);
     }
   }
 
@@ -58,58 +75,127 @@ export default function HomePage() {
           <div className="empty-state-icon">⚠️</div>
           <p className="empty-state-text">Failed to load data</p>
           <p className="empty-state-hint">{error}</p>
-          <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => { setLoading(true); loadReptiles(); }}>
+          <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => { setLoading(true); loadData(); }}>
             Retry
           </button>
         </div>
-      ) : reptiles.length === 0 ? (
-        <div className="empty-state">
-          <div className="empty-state-icon">🦎</div>
-          <p className="empty-state-text">No reptiles yet</p>
-          <p className="empty-state-hint">Tap + to add your first reptile!</p>
-        </div>
       ) : (
-        <div className="reptile-grid">
-          {reptiles.map((reptile) => {
-            const lastLog = getLastLogDate(reptile);
-            return (
-              <div key={reptile.id} className="reptile-card-wrap">
-                <Link to={`/reptile/${reptile.id}`} className="reptile-card">
-                  {reptile.photo ? (
-                    <img src={reptile.photo} alt={reptile.name} className="reptile-card-img" />
-                  ) : (
-                    <div className="reptile-card-placeholder">🦎</div>
-                  )}
-                  <div className="reptile-card-info">
-                    <div className="reptile-card-name">{reptile.name}</div>
-                    <div className="reptile-card-species">{reptile.species}</div>
-                    <div className="reptile-card-lastlog">
-                      {lastLog ? timeAgo(lastLog) : 'No logs yet'}
+        <>
+          {/* Pending Invites */}
+          {pendingInvites.length > 0 && (
+            <div className="invites-section">
+              <h3 className="section-title">Pending Invites</h3>
+              <div className="invites-list">
+                {pendingInvites.map((invite) => (
+                  <div key={invite.id} className="invite-card">
+                    <div className="invite-info">
+                      <span className="invite-reptile">{invite.reptile?.name || 'Unknown reptile'}</span>
+                      <span className="invite-from">Shared by {invite.owner?.display_name || 'Someone'}</span>
+                    </div>
+                    <div className="invite-actions">
+                      <button className="btn btn-sm btn-secondary" onClick={() => handleInviteResponse(invite.id, false)}>
+                        Decline
+                      </button>
+                      <button className="btn btn-sm btn-primary" onClick={() => handleInviteResponse(invite.id, true)}>
+                        Accept
+                      </button>
                     </div>
                   </div>
-                </Link>
-                <button
-                  className="card-menu-btn"
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setMenuId(menuId === reptile.id ? null : reptile.id); }}
-                  aria-label="More options"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                    <circle cx="12" cy="5" r="2" />
-                    <circle cx="12" cy="12" r="2" />
-                    <circle cx="12" cy="19" r="2" />
-                  </svg>
-                </button>
-                {menuId === reptile.id && (
-                  <CardMenu
-                    onEdit={() => { setMenuId(null); navigate(`/reptile/${reptile.id}?edit=1`); }}
-                    onDelete={() => { setMenuId(null); setDeleteId(reptile.id); }}
-                    onClose={() => setMenuId(null)}
-                  />
-                )}
+                ))}
               </div>
-            );
-          })}
-        </div>
+            </div>
+          )}
+
+          {/* Own Reptiles */}
+          {reptiles.length === 0 && sharedReptiles.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">🦎</div>
+              <p className="empty-state-text">No reptiles yet</p>
+              <p className="empty-state-hint">Tap + to add your first reptile!</p>
+            </div>
+          ) : (
+            <>
+              {reptiles.length > 0 && (
+                <div className="reptile-grid">
+                  {reptiles.map((reptile) => {
+                    const lastLog = getLastLogDate(reptile);
+                    return (
+                      <div key={reptile.id} className="reptile-card-wrap">
+                        <Link to={`/reptile/${reptile.id}`} className="reptile-card">
+                          {reptile.photo ? (
+                            <img src={reptile.photo} alt={reptile.name} className="reptile-card-img" />
+                          ) : (
+                            <div className="reptile-card-placeholder">🦎</div>
+                          )}
+                          <div className="reptile-card-info">
+                            <div className="reptile-card-name">{reptile.name}</div>
+                            <div className="reptile-card-species">{reptile.species}</div>
+                            <div className="reptile-card-lastlog">
+                              {lastLog ? timeAgo(lastLog) : 'No logs yet'}
+                            </div>
+                          </div>
+                        </Link>
+                        <button
+                          className="card-menu-btn"
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setMenuId(menuId === reptile.id ? null : reptile.id); }}
+                          aria-label="More options"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <circle cx="12" cy="5" r="2" />
+                            <circle cx="12" cy="12" r="2" />
+                            <circle cx="12" cy="19" r="2" />
+                          </svg>
+                        </button>
+                        {menuId === reptile.id && (
+                          <CardMenu
+                            onEdit={() => { setMenuId(null); navigate(`/reptile/${reptile.id}?edit=1`); }}
+                            onDelete={() => { setMenuId(null); setDeleteId(reptile.id); }}
+                            onClose={() => setMenuId(null)}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Shared Reptiles */}
+              {sharedReptiles.length > 0 && (
+                <>
+                  <h3 className="section-title" style={{ marginTop: reptiles.length > 0 ? 24 : 0 }}>Shared with you</h3>
+                  <div className="reptile-grid">
+                    {sharedReptiles.map((share) => {
+                      const reptile = share.reptile;
+                      if (!reptile) return null;
+                      const lastLog = getLastLogDate(reptile);
+                      return (
+                        <div key={share.id} className="reptile-card-wrap">
+                          <Link to={`/reptile/${reptile.id}`} className="reptile-card">
+                            {reptile.photo ? (
+                              <img src={reptile.photo} alt={reptile.name} className="reptile-card-img" />
+                            ) : (
+                              <div className="reptile-card-placeholder">🦎</div>
+                            )}
+                            <div className="reptile-card-info">
+                              <div className="reptile-card-name">{reptile.name}</div>
+                              <div className="reptile-card-species">{reptile.species}</div>
+                              <div className="shared-badge">
+                                Shared by {share.owner?.display_name || 'Unknown'}
+                              </div>
+                              <div className="reptile-card-lastlog">
+                                {lastLog ? timeAgo(lastLog) : 'No logs yet'}
+                              </div>
+                            </div>
+                          </Link>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </>
       )}
 
       <button className="fab" onClick={() => navigate('/add')} aria-label="Add reptile">

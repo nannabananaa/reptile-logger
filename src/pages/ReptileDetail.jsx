@@ -6,7 +6,9 @@ import {
 import {
   fetchReptileById, fetchLogs, updateReptileById,
   deleteReptileById, createLog, deleteLogById,
+  lookupProfileByEmail, shareReptile, fetchSharesForReptile, removeShare,
 } from '../utils/db';
+import { useAuth } from '../contexts/AuthContext';
 import { getVitamins, saveVitamins, calculateAge } from '../utils/storage';
 
 const CHART_COLORS = {
@@ -18,6 +20,7 @@ const CHART_COLORS = {
 export default function ReptileDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { session } = useAuth();
   const [searchParams] = useSearchParams();
   const [reptile, setReptile] = useState(null);
   const [logs, setLogs] = useState([]);
@@ -28,6 +31,9 @@ export default function ReptileDetail() {
   const [showEditForm, setShowEditForm] = useState(!!searchParams.get('edit'));
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLogId, setDeleteLogId] = useState(null);
+  const [showShareModal, setShowShareModal] = useState(false);
+
+  const isOwner = reptile && session && reptile.user_id === session.user.id;
 
   const reload = useCallback(async () => {
     try {
@@ -145,17 +151,29 @@ export default function ReptileDetail() {
             {age && <p className="detail-age">{age} old</p>}
           </div>
           <div className="detail-actions">
-            <button className="icon-btn" onClick={() => setShowEditForm(true)} aria-label="Edit">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17 3a2.85 2.85 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                <path d="m15 5 4 4" />
-              </svg>
-            </button>
-            <button className="icon-btn icon-btn-danger" onClick={() => setShowDeleteConfirm(true)} aria-label="Delete">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-              </svg>
-            </button>
+            {isOwner && (
+              <button className="icon-btn" onClick={() => setShowShareModal(true)} aria-label="Share">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                </svg>
+              </button>
+            )}
+            {isOwner && (
+              <button className="icon-btn" onClick={() => setShowEditForm(true)} aria-label="Edit">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M17 3a2.85 2.85 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                  <path d="m15 5 4 4" />
+                </svg>
+              </button>
+            )}
+            {isOwner && (
+              <button className="icon-btn icon-btn-danger" onClick={() => setShowDeleteConfirm(true)} aria-label="Delete">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -219,7 +237,7 @@ export default function ReptileDetail() {
           ) : (
             <div className="log-list">
               {filteredLogs.map((log) => (
-                <LogCard key={log.id} log={log} onDelete={() => setDeleteLogId(log.id)} />
+                <LogCard key={log.id} log={log} onDelete={() => setDeleteLogId(log.id)} isOwner={isOwner} />
               ))}
             </div>
           )}
@@ -255,6 +273,12 @@ export default function ReptileDetail() {
           reptile={reptile}
           onClose={() => setShowEditForm(false)}
           onSave={() => { setShowEditForm(false); reload(); }}
+        />
+      )}
+      {showShareModal && (
+        <ShareModal
+          reptileId={id}
+          onClose={() => setShowShareModal(false)}
         />
       )}
       {showDeleteConfirm && (
@@ -335,10 +359,11 @@ function ChartCard({ title, dataKey, color, data, unit }) {
 }
 
 /* ── Log Card ── */
-function LogCard({ log, onDelete }) {
+function LogCard({ log, onDelete, isOwner }) {
   const date = new Date(log.created_at);
   const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const loggedBy = log.profile?.display_name;
 
   return (
     <div className="log-card">
@@ -346,12 +371,15 @@ function LogCard({ log, onDelete }) {
         <div className="log-card-date">
           <span className="log-date-primary">{dateStr}</span>
           <span className="log-date-time">{timeStr}</span>
+          {loggedBy && <span className="log-logged-by">Logged by {loggedBy}</span>}
         </div>
-        <button className="icon-btn icon-btn-sm icon-btn-danger" onClick={onDelete} aria-label="Delete log">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-          </svg>
-        </button>
+        {isOwner && (
+          <button className="icon-btn icon-btn-sm icon-btn-danger" onClick={onDelete} aria-label="Delete log">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+            </svg>
+          </button>
+        )}
       </div>
       <div className="log-card-stats">
         {log.temperature != null && (
@@ -385,6 +413,136 @@ function LogCard({ log, onDelete }) {
         </div>
       )}
       {log.notes && <p className="log-card-notes">{log.notes}</p>}
+    </div>
+  );
+}
+
+/* ── Share Modal ── */
+function ShareModal({ reptileId, onClose }) {
+  const [email, setEmail] = useState('');
+  const [shares, setShares] = useState([]);
+  const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [loadingShares, setLoadingShares] = useState(true);
+
+  useEffect(() => {
+    loadShares();
+  }, [reptileId]);
+
+  async function loadShares() {
+    try {
+      const data = await fetchSharesForReptile(reptileId);
+      setShares(data);
+    } catch (err) {
+      console.error('Failed to load shares:', err);
+    } finally {
+      setLoadingShares(false);
+    }
+  }
+
+  async function handleShare(e) {
+    e.preventDefault();
+    if (!email.trim() || loading) return;
+    setLoading(true);
+    setMessage('');
+
+    try {
+      const profile = await lookupProfileByEmail(email.trim());
+      if (!profile) {
+        setMessage('No account found with that email');
+        setMessageType('error');
+        setLoading(false);
+        return;
+      }
+
+      await shareReptile(reptileId, profile.id);
+      setEmail('');
+      setMessage('Invite sent!');
+      setMessageType('success');
+      await loadShares();
+    } catch (err) {
+      setMessage(err.message || 'Failed to share');
+      setMessageType('error');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleRemoveShare(shareId) {
+    try {
+      await removeShare(shareId);
+      await loadShares();
+    } catch (err) {
+      console.error('Failed to remove share:', err);
+    }
+  }
+
+  const statusLabel = (status) => {
+    if (status === 'pending') return 'Pending';
+    if (status === 'accepted') return 'Accepted';
+    return status;
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>Share Reptile</h3>
+          <button className="icon-btn" onClick={onClose} aria-label="Close">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="modal-body">
+          <form className="form" onSubmit={handleShare}>
+            {message && (
+              <div className={messageType === 'error' ? 'auth-error' : 'auth-success'}>
+                {message}
+              </div>
+            )}
+            <div className="form-group">
+              <label className="form-label">Email Address</label>
+              <input
+                className="form-input"
+                type="email"
+                placeholder="friend@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            <button type="submit" className="btn btn-primary" disabled={loading} style={{ width: '100%' }}>
+              {loading ? 'Sending...' : 'Send Invite'}
+            </button>
+          </form>
+
+          {/* Shared with list */}
+          {!loadingShares && shares.length > 0 && (
+            <div className="share-list">
+              <h4 className="share-list-title">Shared with</h4>
+              {shares.map((share) => (
+                <div key={share.id} className="share-item">
+                  <div className="share-item-info">
+                    <span className="share-item-name">
+                      {share.shared_with?.display_name || share.shared_with?.email || 'Unknown'}
+                    </span>
+                    <span className={`share-status share-status-${share.status}`}>
+                      {statusLabel(share.status)}
+                    </span>
+                  </div>
+                  <button className="icon-btn icon-btn-sm icon-btn-danger" onClick={() => handleRemoveShare(share.id)} aria-label="Remove">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                      <path d="M18 6 6 18M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

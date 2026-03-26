@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function SignUpPage() {
+  const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -15,6 +16,11 @@ export default function SignUpPage() {
     e.preventDefault();
     setError('');
 
+    if (!displayName.trim()) {
+      setError('Display name is required');
+      return;
+    }
+
     if (password !== confirmPassword) {
       setError('Passwords do not match');
       return;
@@ -26,7 +32,7 @@ export default function SignUpPage() {
     }
 
     setLoading(true);
-    const { error } = await signUp(email, password);
+    const { error } = await signUp(email, password, displayName.trim());
     setLoading(false);
 
     if (error) {
@@ -51,6 +57,19 @@ export default function SignUpPage() {
           {error && <div className="auth-error">{error}</div>}
 
           <div className="form-group">
+            <label className="form-label">Display Name</label>
+            <input
+              className="form-input"
+              type="text"
+              placeholder="Your name"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              required
+              autoFocus
+            />
+          </div>
+
+          <div className="form-group">
             <label className="form-label">Email</label>
             <input
               className="form-input"
@@ -59,7 +78,6 @@ export default function SignUpPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              autoFocus
             />
           </div>
 
