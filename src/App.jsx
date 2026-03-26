@@ -9,9 +9,9 @@ import SignUpPage from './pages/SignUpPage';
 import SetupProfilePage from './pages/SetupProfilePage';
 
 function ProtectedRoute({ children }) {
-  const { session, loading, profile, profileLoading } = useAuth();
+  const { session, loading, profile, profileReady } = useAuth();
 
-  if (loading || profileLoading) {
+  if (loading || !profileReady) {
     return (
       <main className="auth-page">
         <div className="auth-loading">
@@ -37,8 +37,8 @@ function PublicRoute({ children }) {
 }
 
 function ProfileSetupRoute({ children }) {
-  const { session, loading, profile, profileLoading } = useAuth();
-  if (loading || profileLoading) return null;
+  const { session, loading, profile, profileReady } = useAuth();
+  if (loading || !profileReady) return null;
   if (!session) return <Navigate to="/login" replace />;
   if (profile) return <Navigate to="/" replace />;
   return children;

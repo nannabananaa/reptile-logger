@@ -1,42 +1,56 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { supabase } from '../utils/supabase';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
-  const [profile, setProfile] = useState(null);
+  const [profile, setProfile] = useState(undefined); // undefined = not yet checked
   const [loading, setLoading] = useState(true);
-  const [profileLoading, setProfileLoading] = useState(false);
+  const profileLoadedFor = useRef(null); // track which user we loaded profile for
 
   async function loadProfile(userId) {
-    setProfileLoading(true);
+    profileLoadedFor.current = userId;
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single();
+      // Only apply if this is still the current user
+      if (profileLoadedFor.current !== userId) return;
       if (!error && data) setProfile(data);
       else setProfile(null);
     } catch {
-      setProfile(null);
-    } finally {
-      setProfileLoading(false);
+      if (profileLoadedFor.current === userId) setProfile(null);
     }
   }
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    let initialLoad = true;
+
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
-      if (session?.user) loadProfile(session.user.id);
+      if (session?.user) {
+        await loadProfile(session.user.id);
+      } else {
+        setProfile(null);
+      }
       setLoading(false);
+      initialLoad = false;
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      if (session?.user) loadProfile(session.user.id);
-      else setProfile(null);
+      if (session?.user) {
+        // Skip if the initial getSession load is still handling this
+        if (!initialLoad) {
+          loadProfile(session.user.id);
+        }
+      } else {
+        setProfile(null);
+        profileLoadedFor.current = null;
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -46,7 +60,6 @@ export function AuthProvider({ children }) {
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) return { error };
 
-    // Create profile for the new user
     if (data?.user) {
       await supabase.from('profiles').insert({
         id: data.user.id,
@@ -70,16 +83,20 @@ export function AuthProvider({ children }) {
   async function signOut() {
     setSession(null);
     setProfile(null);
+    profileLoadedFor.current = null;
     const { error } = await supabase.auth.signOut();
     return { error };
   }
 
-  function refreshProfile() {
-    if (session?.user) return loadProfile(session.user.id);
+  async function refreshProfile() {
+    if (session?.user) await loadProfile(session.user.id);
   }
 
+  // profile === undefined means we haven't checked yet — treat as loading
+  const profileReady = profile !== undefined;
+
   return (
-    <AuthContext.Provider value={{ session, profile, loading, profileLoading, signUp, signIn, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{ session, profile, loading, profileReady, signUp, signIn, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
