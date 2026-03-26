@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { createProfile } from '../utils/db';
+import { upsertProfile } from '../utils/db';
 
 export default function SetupProfilePage() {
   const [displayName, setDisplayName] = useState('');
@@ -19,7 +19,7 @@ export default function SetupProfilePage() {
     setError('');
 
     try {
-      await createProfile({
+      await upsertProfile({
         display_name: displayName.trim(),
         email: session.user.email,
       });

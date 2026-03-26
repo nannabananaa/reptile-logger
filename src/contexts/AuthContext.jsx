@@ -60,12 +60,17 @@ export function AuthProvider({ children }) {
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) return { error };
 
+    // Create or update the profile row. Use upsert because a database trigger
+    // may have already created a row with a null display_name.
     if (data?.user) {
-      await supabase.from('profiles').insert({
+      const { error: profileError } = await supabase.from('profiles').upsert({
         id: data.user.id,
         display_name: displayName,
         email: email.toLowerCase().trim(),
       });
+      if (profileError) {
+        console.error('Failed to create profile during sign up:', profileError.message);
+      }
     }
 
     return { error: null };

@@ -23,8 +23,9 @@ function ProtectedRoute({ children }) {
 
   if (!session) return <Navigate to="/login" replace />;
 
-  // Existing user without a profile — prompt to set display name
-  if (!profile) return <Navigate to="/setup-profile" replace />;
+  // User without a profile or without a display name — prompt to set one.
+  // A profile row may exist (e.g. created by a DB trigger) but with display_name = null.
+  if (!profile?.display_name) return <Navigate to="/setup-profile" replace />;
 
   return children;
 }
@@ -40,7 +41,7 @@ function ProfileSetupRoute({ children }) {
   const { session, loading, profile, profileReady } = useAuth();
   if (loading || !profileReady) return null;
   if (!session) return <Navigate to="/login" replace />;
-  if (profile) return <Navigate to="/" replace />;
+  if (profile?.display_name) return <Navigate to="/" replace />;
   return children;
 }
 

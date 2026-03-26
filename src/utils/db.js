@@ -45,6 +45,18 @@ export async function createProfile({ display_name, email }) {
   return data;
 }
 
+export async function upsertProfile({ display_name, email }) {
+  const userId = await getUserId();
+  const { data, error } = await supabase
+    .from('profiles')
+    .upsert({ id: userId, display_name, email })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
 export async function updateProfile({ display_name }) {
   const userId = await getUserId();
   const { data, error } = await supabase
