@@ -201,7 +201,7 @@ export async function fetchLogs(reptileId) {
 
 export async function createLog(reptileId, log) {
   const userId = await getUserId();
-  const row = {
+  const baseRow = {
     reptile_id: reptileId,
     user_id: userId,
     temperature: log.temperature,
@@ -212,14 +212,32 @@ export async function createLog(reptileId, log) {
     notes: log.notes,
   };
   const cf = log.category_fields;
-  if (cf && Object.keys(cf).length > 0) {
-    row.category_fields = cf;
+  const hasCategoryFields = cf && Object.keys(cf).length > 0;
+
+  let data, error;
+  if (hasCategoryFields) {
+    // Try with category_fields first
+    ({ data, error } = await supabase
+      .from('logs')
+      .insert({ ...baseRow, category_fields: cf })
+      .select()
+      .single());
+    // If column doesn't exist, retry without it
+    if (error && error.code === '42703') {
+      console.warn('category_fields column missing — saving log without category data. Run the migration in supabase/add-category-fields-column.sql');
+      ({ data, error } = await supabase
+        .from('logs')
+        .insert(baseRow)
+        .select()
+        .single());
+    }
+  } else {
+    ({ data, error } = await supabase
+      .from('logs')
+      .insert(baseRow)
+      .select()
+      .single());
   }
-  const { data, error } = await supabase
-    .from('logs')
-    .insert(row)
-    .select()
-    .single();
 
   if (error) throw error;
 
