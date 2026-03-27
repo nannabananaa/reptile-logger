@@ -112,7 +112,7 @@ export default function ReptileDetail() {
 
   const age = calculateAge(reptile.dob);
   const hasChartData = chartData.length >= 2;
-  const category = reptile.category || 'other';
+  const category = reptile.category || '';
 
   async function handleDeleteReptile() {
     try {
@@ -851,7 +851,7 @@ function CategoryFieldInput({ field, value, customValue, onChange, onCustomChang
 /* ── Edit Reptile Modal ── */
 function EditReptileModal({ reptile, onClose, onSave }) {
   const [name, setName] = useState(reptile.name);
-  const [category, setCategory] = useState(reptile.category || 'other');
+  const [category, setCategory] = useState(reptile.category || '');
   const [species, setSpecies] = useState(reptile.species || '');
   const [dob, setDob] = useState(reptile.dob || '');
   const [photo, setPhoto] = useState(reptile.photo);
@@ -922,6 +922,7 @@ function EditReptileModal({ reptile, onClose, onSave }) {
           <div className="form-group">
             <label className="form-label">Reptile Type</label>
             <select className="form-input" value={category} onChange={(e) => setCategory(e.target.value)}>
+              <option value="">Select type...</option>
               {CATEGORIES.map((c) => (
                 <option key={c.value} value={c.value}>{c.label}</option>
               ))}
