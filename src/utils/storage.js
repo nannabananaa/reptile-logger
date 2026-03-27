@@ -1,5 +1,7 @@
 const VITAMINS_KEY = 'vitamins';
 const DEFAULT_VITAMINS = ['Calcium', 'D3', 'Multivitamin'];
+const TEMP_UNIT_KEY = 'tempUnit';
+const WEIGHT_UNIT_KEY = 'weightUnit';
 
 export function getVitamins() {
   try {
@@ -12,6 +14,53 @@ export function getVitamins() {
 
 export function saveVitamins(vitamins) {
   localStorage.setItem(VITAMINS_KEY, JSON.stringify(vitamins));
+}
+
+/* ── Unit preferences ── */
+
+export function getTempUnit() {
+  return localStorage.getItem(TEMP_UNIT_KEY) || 'F';
+}
+
+export function setTempUnit(unit) {
+  localStorage.setItem(TEMP_UNIT_KEY, unit);
+}
+
+export function getWeightUnit() {
+  return localStorage.getItem(WEIGHT_UNIT_KEY) || 'g';
+}
+
+export function setWeightUnit(unit) {
+  localStorage.setItem(WEIGHT_UNIT_KEY, unit);
+}
+
+// Stored values are always F and g. Convert for display only.
+export function displayTemp(fahrenheit) {
+  if (fahrenheit == null) return null;
+  const unit = getTempUnit();
+  if (unit === 'C') {
+    const c = ((fahrenheit - 32) * 5) / 9;
+    return `${Math.round(c * 10) / 10}°C`;
+  }
+  return `${fahrenheit}°F`;
+}
+
+export function displayWeight(grams) {
+  if (grams == null) return null;
+  const unit = getWeightUnit();
+  if (unit === 'oz') {
+    const oz = grams / 28.3495;
+    return `${Math.round(oz * 100) / 100} oz`;
+  }
+  return `${grams}g`;
+}
+
+export function tempUnitLabel() {
+  return getTempUnit() === 'C' ? '°C' : '°F';
+}
+
+export function weightUnitLabel() {
+  return getWeightUnit() === 'oz' ? 'oz' : 'g';
 }
 
 export function calculateAge(dob) {

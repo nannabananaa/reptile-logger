@@ -9,7 +9,7 @@ import {
   lookupProfileByEmail, shareReptile, fetchSharesForReptile, removeShare,
 } from '../utils/db';
 import { useAuth } from '../contexts/AuthContext';
-import { getVitamins, saveVitamins, calculateAge } from '../utils/storage';
+import { getVitamins, saveVitamins, calculateAge, displayTemp, displayWeight, tempUnitLabel, weightUnitLabel } from '../utils/storage';
 import { CATEGORIES, getCategoryFields, getCategoryLabel, getFieldIcon } from '../utils/categoryFields';
 
 const CHART_COLORS = {
@@ -256,9 +256,9 @@ export default function ReptileDetail() {
             </div>
           ) : (
             <>
-              <ChartCard title="Temperature (°F)" dataKey="temperature" color={CHART_COLORS.temperature} data={chartData} unit="°F" />
+              <ChartCard title={`Temperature (${tempUnitLabel()})`} dataKey="temperature" color={CHART_COLORS.temperature} data={chartData} unit={tempUnitLabel()} convertFn={tempUnitLabel() === '°C' ? (v) => Math.round(((v - 32) * 5 / 9) * 10) / 10 : null} />
               <ChartCard title="Humidity (%)" dataKey="humidity" color={CHART_COLORS.humidity} data={chartData} unit="%" />
-              <ChartCard title="Weight (g)" dataKey="weight" color={CHART_COLORS.weight} data={chartData} unit="g" />
+              <ChartCard title={`Weight (${weightUnitLabel()})`} dataKey="weight" color={CHART_COLORS.weight} data={chartData} unit={weightUnitLabel()} convertFn={weightUnitLabel() === 'oz' ? (v) => Math.round((v / 28.3495) * 100) / 100 : null} />
             </>
           )}
         </div>
@@ -307,8 +307,8 @@ export default function ReptileDetail() {
 }
 
 /* ── Chart Card ── */
-function ChartCard({ title, dataKey, color, data, unit }) {
-  const filtered = data.filter((d) => d[dataKey] != null);
+function ChartCard({ title, dataKey, color, data, unit, convertFn }) {
+  const filtered = data.filter((d) => d[dataKey] != null).map((d) => convertFn ? { ...d, [dataKey]: convertFn(d[dataKey]) } : d);
   if (filtered.length < 2) {
     return (
       <div className="chart-card">
@@ -402,7 +402,7 @@ function LogCard({ log, category, onDelete, isOwner }) {
         {log.temperature != null && (
           <div className="log-stat">
             <span className="log-stat-icon">🌡️</span>
-            <span>{log.temperature}°F</span>
+            <span>{displayTemp(log.temperature)}</span>
           </div>
         )}
         {log.humidity != null && (
@@ -414,7 +414,7 @@ function LogCard({ log, category, onDelete, isOwner }) {
         {log.weight != null && (
           <div className="log-stat">
             <span className="log-stat-icon">⚖️</span>
-            <span>{log.weight}g</span>
+            <span>{displayWeight(log.weight)}</span>
           </div>
         )}
         <div className="log-stat">
@@ -674,7 +674,7 @@ function LogFormModal({ reptileId, category, onClose, onSave }) {
         <form className="form modal-body" onSubmit={handleSave}>
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label">Temp (°F)</label>
+              <label className="form-label">Temp ({tempUnitLabel()})</label>
               <input className="form-input" type="number" step="0.1" placeholder="95" value={temperature} onChange={(e) => setTemperature(e.target.value)} />
             </div>
             <div className="form-group">
@@ -684,7 +684,7 @@ function LogFormModal({ reptileId, category, onClose, onSave }) {
           </div>
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label">Weight (g)</label>
+              <label className="form-label">Weight ({weightUnitLabel()})</label>
               <input className="form-input" type="number" step="0.1" placeholder="350" value={weight} onChange={(e) => setWeight(e.target.value)} />
             </div>
             <div className="form-group">

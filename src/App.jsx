@@ -7,6 +7,7 @@ import ReptileDetail from './pages/ReptileDetail';
 import LoginPage from './pages/LoginPage';
 import SignUpPage from './pages/SignUpPage';
 import SetupProfilePage from './pages/SetupProfilePage';
+import SettingsPage from './pages/SettingsPage';
 
 function ProtectedRoute({ children }) {
   const { session, profile } = useAuth();
@@ -52,6 +53,7 @@ export default function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/add" element={<AddReptile />} />
         <Route path="/reptile/:id" element={<ReptileDetail />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Route>
     </Routes>
   );

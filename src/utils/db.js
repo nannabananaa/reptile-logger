@@ -330,6 +330,39 @@ export async function fetchPendingInvites() {
   }));
 }
 
+export async function deleteAccount() {
+  const userId = await getUserId();
+
+  // Delete shared_reptiles where user is owner or shared_with
+  await supabase.from('shared_reptiles').delete().eq('owner_id', userId);
+  await supabase.from('shared_reptiles').delete().eq('shared_with_id', userId);
+
+  // Get all reptile IDs owned by user
+  const { data: reptiles } = await supabase
+    .from('reptiles')
+    .select('id')
+    .eq('user_id', userId);
+
+  if (reptiles && reptiles.length > 0) {
+    const reptileIds = reptiles.map((r) => r.id);
+    // Delete all logs for user's reptiles
+    await supabase.from('logs').delete().in('reptile_id', reptileIds);
+    // Delete reptiles
+    await supabase.from('reptiles').delete().eq('user_id', userId);
+  }
+
+  // Delete logs the user created on shared reptiles
+  await supabase.from('logs').delete().eq('user_id', userId);
+
+  // Delete profile
+  await supabase.from('profiles').delete().eq('id', userId);
+
+  // Delete auth user (via RPC or admin — fallback: just sign out)
+  // Supabase client-side can't delete auth users, so we sign out.
+  // The auth user record remains but all data is gone.
+  await supabase.auth.signOut();
+}
+
 export async function respondToInvite(shareId, accept) {
   if (accept) {
     const { error } = await supabase
