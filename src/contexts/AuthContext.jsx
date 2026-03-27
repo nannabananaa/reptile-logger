@@ -43,8 +43,9 @@ export function AuthProvider({ children }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (session?.user) {
-        // Skip if the initial getSession load is still handling this
-        if (!initialLoad) {
+        // Skip if the initial getSession load is still handling this,
+        // or if we already loaded the profile for this user (avoids flash).
+        if (!initialLoad && profileLoadedFor.current !== session.user.id) {
           loadProfile(session.user.id);
         }
       } else {
@@ -77,10 +78,15 @@ export function AuthProvider({ children }) {
   }
 
   async function signIn(email, password) {
+    // Reset profile to undefined (loading state) BEFORE setting the session
+    // so ProtectedRoute shows a loading screen instead of flashing setup-profile.
+    setProfile(undefined);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (data?.session) {
       setSession(data.session);
       await loadProfile(data.session.user.id);
+    } else {
+      setProfile(null);
     }
     return { error };
   }
