@@ -24,7 +24,7 @@ function compressPhoto(dataUrl, maxWidth = 600) {
 export default function AddReptile() {
   const navigate = useNavigate();
   const [name, setName] = useState('');
-  const [category, setCategory] = useState('other');
+  const [category, setReptile Type] = useState('other');
   const [species, setSpecies] = useState('');
   const [dob, setDob] = useState('');
   const [photo, setPhoto] = useState(null);
@@ -103,8 +103,8 @@ export default function AddReptile() {
         </div>
 
         <div className="form-group">
-          <label className="form-label">Category</label>
-          <select className="form-input" value={category} onChange={(e) => setCategory(e.target.value)}>
+          <label className="form-label">Reptile Type</label>
+          <select className="form-input" value={category} onChange={(e) => setReptile Type(e.target.value)}>
             {CATEGORIES.map((c) => (
               <option key={c.value} value={c.value}>{c.label}</option>
             ))}
@@ -112,7 +112,7 @@ export default function AddReptile() {
         </div>
 
         <div className="form-group">
-          <label className="form-label">Species / Morph</label>
+          <label className="form-label">Kind</label>
           <input
             className="form-input"
             type="text"

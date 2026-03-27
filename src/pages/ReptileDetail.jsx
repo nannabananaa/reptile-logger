@@ -149,8 +149,9 @@ export default function ReptileDetail() {
         <div className="detail-info-header">
           <div>
             <h2 className="detail-name">{reptile.name}</h2>
-            {reptile.species && <p className="detail-species">{reptile.species}</p>}
-            <p className="detail-category">{getCategoryLabel(category)}</p>
+            <p className="detail-species">
+              {getCategoryLabel(category)}{reptile.species ? ` — ${reptile.species}` : ''}
+            </p>
             {age && <p className="detail-age">{age} old</p>}
           </div>
           <div className="detail-actions">
@@ -919,7 +920,7 @@ function EditReptileModal({ reptile, onClose, onSave }) {
             <input className="form-input" type="text" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div className="form-group">
-            <label className="form-label">Category</label>
+            <label className="form-label">Reptile Type</label>
             <select className="form-input" value={category} onChange={(e) => setCategory(e.target.value)}>
               {CATEGORIES.map((c) => (
                 <option key={c.value} value={c.value}>{c.label}</option>
@@ -927,7 +928,7 @@ function EditReptileModal({ reptile, onClose, onSave }) {
             </select>
           </div>
           <div className="form-group">
-            <label className="form-label">Species / Morph</label>
+            <label className="form-label">Kind</label>
             <input className="form-input" type="text" value={species} onChange={(e) => setSpecies(e.target.value)} />
           </div>
           <div className="form-group">

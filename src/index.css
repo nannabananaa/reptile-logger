@@ -644,13 +644,6 @@ select.form-input {
   font-weight: 400;
 }
 
-.detail-category {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-top: 4px;
-  font-weight: 400;
-}
-
 .detail-age {
   font-size: 12px;
   color: var(--accent);
