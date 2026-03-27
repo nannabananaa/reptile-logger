@@ -5,9 +5,9 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
-  const [profile, setProfile] = useState(undefined); // undefined = not yet checked
-  const [loading, setLoading] = useState(true);
-  const profileLoadedFor = useRef(null); // track which user we loaded profile for
+  const [profile, setProfile] = useState(null);
+  const [ready, setReady] = useState(false);
+  const profileLoadedFor = useRef(null);
 
   async function loadProfile(userId) {
     profileLoadedFor.current = userId;
@@ -17,7 +17,6 @@ export function AuthProvider({ children }) {
         .select('*')
         .eq('id', userId)
         .single();
-      // Only apply if this is still the current user
       if (profileLoadedFor.current !== userId) return;
       if (!error && data) setProfile(data);
       else setProfile(null);
@@ -33,19 +32,19 @@ export function AuthProvider({ children }) {
       setSession(session);
       if (session?.user) {
         await loadProfile(session.user.id);
-      } else {
-        setProfile(null);
       }
-      setLoading(false);
+      setReady(true);
       initialLoad = false;
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      // During initial load, getSession handles everything.
+      // After signIn/signOut, those functions handle everything.
+      // This listener only needs to handle external auth changes (e.g. token refresh).
+      if (initialLoad) return;
       setSession(session);
       if (session?.user) {
-        // Skip if the initial getSession load is still handling this,
-        // or if we already loaded the profile for this user (avoids flash).
-        if (!initialLoad && profileLoadedFor.current !== session.user.id) {
+        if (profileLoadedFor.current !== session.user.id) {
           loadProfile(session.user.id);
         }
       } else {
@@ -61,8 +60,6 @@ export function AuthProvider({ children }) {
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) return { error };
 
-    // Create or update the profile row. Use upsert because a database trigger
-    // may have already created a row with a null display_name.
     if (data?.user) {
       const { error: profileError } = await supabase.from('profiles').upsert({
         id: data.user.id,
@@ -78,36 +75,32 @@ export function AuthProvider({ children }) {
   }
 
   async function signIn(email, password) {
-    // Reset profile to undefined (loading state) BEFORE setting the session
-    // so ProtectedRoute shows a loading screen instead of flashing setup-profile.
-    setProfile(undefined);
+    // Block all route rendering until profile is fully loaded.
+    setReady(false);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (data?.session) {
       setSession(data.session);
       await loadProfile(data.session.user.id);
-    } else {
-      setProfile(null);
     }
+    setReady(true);
     return { error };
   }
 
   async function signOut() {
+    setReady(false);
     setSession(null);
     setProfile(null);
     profileLoadedFor.current = null;
-    const { error } = await supabase.auth.signOut();
-    return { error };
+    await supabase.auth.signOut();
+    setReady(true);
   }
 
   async function refreshProfile() {
     if (session?.user) await loadProfile(session.user.id);
   }
 
-  // profile === undefined means we haven't checked yet — treat as loading
-  const profileReady = profile !== undefined;
-
   return (
-    <AuthContext.Provider value={{ session, profile, loading, profileReady, signUp, signIn, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{ session, profile, ready, signUp, signIn, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

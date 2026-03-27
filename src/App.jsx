@@ -9,9 +9,31 @@ import SignUpPage from './pages/SignUpPage';
 import SetupProfilePage from './pages/SetupProfilePage';
 
 function ProtectedRoute({ children }) {
-  const { session, loading, profile, profileReady } = useAuth();
+  const { session, profile } = useAuth();
+  if (!session) return <Navigate to="/login" replace />;
+  if (!profile?.display_name?.trim()) return <Navigate to="/setup-profile" replace />;
+  return children;
+}
 
-  if (loading || !profileReady) {
+function PublicRoute({ children }) {
+  const { session } = useAuth();
+  if (session) return <Navigate to="/" replace />;
+  return children;
+}
+
+function ProfileSetupRoute({ children }) {
+  const { session, profile } = useAuth();
+  if (!session) return <Navigate to="/login" replace />;
+  if (profile?.display_name?.trim()) return <Navigate to="/" replace />;
+  return children;
+}
+
+export default function App() {
+  const { ready } = useAuth();
+
+  // Block ALL route rendering until session + profile are fully resolved.
+  // This prevents any flash of wrong pages during auth transitions.
+  if (!ready) {
     return (
       <main className="auth-page">
         <div className="auth-loading">
@@ -21,31 +43,6 @@ function ProtectedRoute({ children }) {
     );
   }
 
-  if (!session) return <Navigate to="/login" replace />;
-
-  // User without a profile or without a display name — prompt to set one.
-  // A profile row may exist (e.g. created by a DB trigger) but with display_name = null/empty.
-  if (!profile?.display_name?.trim()) return <Navigate to="/setup-profile" replace />;
-
-  return children;
-}
-
-function PublicRoute({ children }) {
-  const { session, loading } = useAuth();
-  if (loading) return null;
-  if (session) return <Navigate to="/" replace />;
-  return children;
-}
-
-function ProfileSetupRoute({ children }) {
-  const { session, loading, profile, profileReady } = useAuth();
-  if (loading || !profileReady) return null;
-  if (!session) return <Navigate to="/login" replace />;
-  if (profile?.display_name?.trim()) return <Navigate to="/" replace />;
-  return children;
-}
-
-export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
