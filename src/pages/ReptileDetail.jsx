@@ -10,6 +10,7 @@ import {
 } from '../utils/db';
 import { useAuth } from '../contexts/AuthContext';
 import { getVitamins, saveVitamins, calculateAge } from '../utils/storage';
+import { CATEGORIES, getCategoryFields, getCategoryLabel, getFieldIcon } from '../utils/categoryFields';
 
 const CHART_COLORS = {
   temperature: '#c4a44a',
@@ -111,6 +112,7 @@ export default function ReptileDetail() {
 
   const age = calculateAge(reptile.dob);
   const hasChartData = chartData.length >= 2;
+  const category = reptile.category || 'other';
 
   async function handleDeleteReptile() {
     try {
@@ -148,6 +150,7 @@ export default function ReptileDetail() {
           <div>
             <h2 className="detail-name">{reptile.name}</h2>
             {reptile.species && <p className="detail-species">{reptile.species}</p>}
+            <p className="detail-category">{getCategoryLabel(category)}</p>
             {age && <p className="detail-age">{age} old</p>}
           </div>
           <div className="detail-actions">
@@ -237,7 +240,7 @@ export default function ReptileDetail() {
           ) : (
             <div className="log-list">
               {filteredLogs.map((log) => (
-                <LogCard key={log.id} log={log} onDelete={() => setDeleteLogId(log.id)} isOwner={isOwner} />
+                <LogCard key={log.id} log={log} category={category} onDelete={() => setDeleteLogId(log.id)} isOwner={isOwner} />
               ))}
             </div>
           )}
@@ -264,6 +267,7 @@ export default function ReptileDetail() {
       {showLogForm && (
         <LogFormModal
           reptileId={id}
+          category={category}
           onClose={() => setShowLogForm(false)}
           onSave={() => { setShowLogForm(false); reload(); }}
         />
@@ -359,11 +363,25 @@ function ChartCard({ title, dataKey, color, data, unit }) {
 }
 
 /* ── Log Card ── */
-function LogCard({ log, onDelete, isOwner }) {
+function LogCard({ log, category, onDelete, isOwner }) {
   const date = new Date(log.created_at);
   const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   const loggedBy = log.profile?.display_name;
+  const categoryFieldDefs = getCategoryFields(category);
+  const cf = log.category_fields || {};
+  const hasCategoryData = categoryFieldDefs.some((f) => {
+    const val = cf[f.key];
+    return val != null && val !== '' && val !== false;
+  });
+
+  function formatFieldValue(field, value) {
+    if (value == null || value === '' || value === false) return null;
+    if (field.type === 'toggle') return value ? 'Yes' : null;
+    if (field.key === 'soak_duration_min') return `${value} min`;
+    if (field.key === 'water_temp' || field.key === 'basking_temp') return `${value}°F`;
+    return String(value);
+  }
 
   return (
     <div className="log-card">
@@ -403,6 +421,21 @@ function LogCard({ log, onDelete, isOwner }) {
           <span className={log.fed ? 'log-fed-yes' : 'log-fed-no'}>{log.fed ? 'Fed' : 'Not fed'}</span>
         </div>
       </div>
+      {hasCategoryData && (
+        <div className="log-card-category">
+          {categoryFieldDefs.map((field) => {
+            const display = formatFieldValue(field, cf[field.key]);
+            if (!display) return null;
+            return (
+              <div key={field.key} className="log-stat log-stat-category">
+                <span className="log-stat-icon">{getFieldIcon(field.key)}</span>
+                <span className="log-stat-clabel">{field.label}</span>
+                <span>{display}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
       {log.vitamins && log.vitamins.length > 0 && (
         <div className="log-card-vitamins">
           {log.vitamins.map((v) => (
@@ -546,7 +579,7 @@ function ShareModal({ reptileId, onClose }) {
 }
 
 /* ── Log Form Modal ── */
-function LogFormModal({ reptileId, onClose, onSave }) {
+function LogFormModal({ reptileId, category, onClose, onSave }) {
   const [temperature, setTemperature] = useState('');
   const [humidity, setHumidity] = useState('');
   const [weight, setWeight] = useState('');
@@ -557,6 +590,13 @@ function LogFormModal({ reptileId, onClose, onSave }) {
   const [showVitaminEditor, setShowVitaminEditor] = useState(false);
   const [newVitamin, setNewVitamin] = useState('');
   const [saving, setSaving] = useState(false);
+  const [categoryFieldValues, setCategoryFieldValues] = useState({});
+
+  const categoryFieldDefs = getCategoryFields(category);
+
+  function setCategoryField(key, value) {
+    setCategoryFieldValues((prev) => ({ ...prev, [key]: value }));
+  }
 
   function toggleVitamin(v) {
     setSelectedVitamins((prev) =>
@@ -585,6 +625,23 @@ function LogFormModal({ reptileId, onClose, onSave }) {
     if (saving) return;
     setSaving(true);
 
+    // Clean category field values — convert number strings, resolve "Other" custom values, strip empty
+    const cleanedCategoryFields = {};
+    for (const field of categoryFieldDefs) {
+      let val = categoryFieldValues[field.key];
+      if (val == null || val === '') continue;
+      if (field.type === 'select_other' && val === 'Other') {
+        const custom = categoryFieldValues[`${field.key}_custom`];
+        val = custom?.trim() || 'Other';
+      }
+      if (field.type === 'number') {
+        const num = Number(val);
+        if (!isNaN(num)) cleanedCategoryFields[field.key] = num;
+      } else {
+        cleanedCategoryFields[field.key] = val;
+      }
+    }
+
     try {
       await createLog(reptileId, {
         temperature: temperature ? Number(temperature) : null,
@@ -593,6 +650,7 @@ function LogFormModal({ reptileId, onClose, onSave }) {
         fed,
         vitamins: selectedVitamins,
         notes: notes.trim() || null,
+        category_fields: cleanedCategoryFields,
       });
       onSave();
     } catch (err) {
@@ -691,6 +749,24 @@ function LogFormModal({ reptileId, onClose, onSave }) {
             <textarea className="form-input form-textarea" placeholder="Any observations..." value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
           </div>
 
+          {/* Category-specific fields */}
+          {categoryFieldDefs.length > 0 && (
+            <>
+              <div className="form-divider" />
+              <p className="form-section-title">{getCategoryLabel(category)} Details</p>
+              {categoryFieldDefs.map((field) => (
+                <CategoryFieldInput
+                  key={field.key}
+                  field={field}
+                  value={categoryFieldValues[field.key]}
+                  customValue={categoryFieldValues[`${field.key}_custom`]}
+                  onChange={(val) => setCategoryField(field.key, val)}
+                  onCustomChange={(val) => setCategoryField(`${field.key}_custom`, val)}
+                />
+              ))}
+            </>
+          )}
+
           <div className="form-actions">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={saving}>
@@ -703,9 +779,78 @@ function LogFormModal({ reptileId, onClose, onSave }) {
   );
 }
 
+/* ── Category Field Input ── */
+function CategoryFieldInput({ field, value, customValue, onChange, onCustomChange }) {
+  if (field.type === 'toggle') {
+    return (
+      <div className="form-group">
+        <label className="form-label">{field.label}</label>
+        <button type="button" className={`toggle ${value ? 'toggle-on' : ''}`} onClick={() => onChange(!value)}>
+          <span className="toggle-knob" />
+          <span className="toggle-label">{value ? 'Yes' : 'No'}</span>
+        </button>
+      </div>
+    );
+  }
+
+  if (field.type === 'select') {
+    return (
+      <div className="form-group">
+        <label className="form-label">{field.label}</label>
+        <select className="form-input" value={value || ''} onChange={(e) => onChange(e.target.value)}>
+          <option value="">—</option>
+          {field.options.map((opt) => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+
+  if (field.type === 'select_other') {
+    const isOther = value === 'Other';
+    return (
+      <div className="form-group">
+        <label className="form-label">{field.label}</label>
+        <select className="form-input" value={isOther ? 'Other' : (value || '')} onChange={(e) => { onChange(e.target.value); if (e.target.value !== 'Other') onCustomChange(''); }}>
+          <option value="">—</option>
+          {field.options.map((opt) => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
+        {isOther && (
+          <input
+            className="form-input"
+            type="text"
+            placeholder="Specify..."
+            value={customValue || ''}
+            onChange={(e) => onCustomChange(e.target.value)}
+            style={{ marginTop: 8 }}
+          />
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="form-group">
+      <label className="form-label">{field.label}</label>
+      <input
+        className="form-input"
+        type={field.type === 'number' ? 'number' : field.type}
+        step={field.type === 'number' ? 'any' : undefined}
+        placeholder={field.placeholder || ''}
+        value={value || ''}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </div>
+  );
+}
+
 /* ── Edit Reptile Modal ── */
 function EditReptileModal({ reptile, onClose, onSave }) {
   const [name, setName] = useState(reptile.name);
+  const [category, setCategory] = useState(reptile.category || 'other');
   const [species, setSpecies] = useState(reptile.species || '');
   const [dob, setDob] = useState(reptile.dob || '');
   const [photo, setPhoto] = useState(reptile.photo);
@@ -730,6 +875,7 @@ function EditReptileModal({ reptile, onClose, onSave }) {
         species: species.trim(),
         dob: dob || null,
         photo,
+        category,
       });
       onSave();
     } catch (err) {
@@ -771,6 +917,14 @@ function EditReptileModal({ reptile, onClose, onSave }) {
           <div className="form-group">
             <label className="form-label">Name</label>
             <input className="form-input" type="text" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Category</label>
+            <select className="form-input" value={category} onChange={(e) => setCategory(e.target.value)}>
+              {CATEGORIES.map((c) => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
+            </select>
           </div>
           <div className="form-group">
             <label className="form-label">Species / Morph</label>

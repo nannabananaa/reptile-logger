@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createReptile } from '../utils/db';
+import { CATEGORIES } from '../utils/categoryFields';
 
 function compressPhoto(dataUrl, maxWidth = 600) {
   return new Promise((resolve) => {
@@ -23,6 +24,7 @@ function compressPhoto(dataUrl, maxWidth = 600) {
 export default function AddReptile() {
   const navigate = useNavigate();
   const [name, setName] = useState('');
+  const [category, setCategory] = useState('other');
   const [species, setSpecies] = useState('');
   const [dob, setDob] = useState('');
   const [photo, setPhoto] = useState(null);
@@ -54,6 +56,7 @@ export default function AddReptile() {
         species: species.trim(),
         dob: dob || null,
         photo: compressed,
+        category,
       });
       navigate('/');
     } catch (err) {
@@ -97,6 +100,15 @@ export default function AddReptile() {
             onChange={(e) => setName(e.target.value)}
             autoFocus
           />
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Category</label>
+          <select className="form-input" value={category} onChange={(e) => setCategory(e.target.value)}>
+            {CATEGORIES.map((c) => (
+              <option key={c.value} value={c.value}>{c.label}</option>
+            ))}
+          </select>
         </div>
 
         <div className="form-group">

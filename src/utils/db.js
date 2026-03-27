@@ -131,7 +131,7 @@ export async function fetchReptileById(id) {
   return data;
 }
 
-export async function createReptile({ name, species, dob, photo }) {
+export async function createReptile({ name, species, dob, photo, category }) {
   const userId = await getUserId();
   const { data, error } = await supabase
     .from('reptiles')
@@ -141,6 +141,7 @@ export async function createReptile({ name, species, dob, photo }) {
       species: species || '',
       dob: dob || null,
       photo: photo || null,
+      category: category || 'other',
     })
     .select()
     .single();
@@ -150,14 +151,16 @@ export async function createReptile({ name, species, dob, photo }) {
 }
 
 export async function updateReptileById(id, updates) {
+  const updateObj = {
+    name: updates.name,
+    species: updates.species,
+    dob: updates.dob,
+    photo: updates.photo,
+  };
+  if (updates.category !== undefined) updateObj.category = updates.category;
   const { data, error } = await supabase
     .from('reptiles')
-    .update({
-      name: updates.name,
-      species: updates.species,
-      dob: updates.dob,
-      photo: updates.photo,
-    })
+    .update(updateObj)
     .eq('id', id)
     .select()
     .single();
@@ -209,6 +212,7 @@ export async function createLog(reptileId, log) {
       fed: log.fed,
       vitamins: log.vitamins,
       notes: log.notes,
+      category_fields: log.category_fields || {},
     })
     .select()
     .single();
