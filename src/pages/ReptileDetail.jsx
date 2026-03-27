@@ -592,6 +592,7 @@ function LogFormModal({ reptileId, category, onClose, onSave }) {
   const [newVitamin, setNewVitamin] = useState('');
   const [saving, setSaving] = useState(false);
   const [categoryFieldValues, setCategoryFieldValues] = useState({});
+  const [error, setError] = useState(null);
 
   const categoryFieldDefs = getCategoryFields(category);
 
@@ -656,6 +657,7 @@ function LogFormModal({ reptileId, category, onClose, onSave }) {
       onSave();
     } catch (err) {
       console.error('Failed to save log:', err);
+      setError(err.message || 'Failed to save log');
       setSaving(false);
     }
   }
@@ -672,6 +674,7 @@ function LogFormModal({ reptileId, category, onClose, onSave }) {
           </button>
         </div>
         <form className="form modal-body" onSubmit={handleSave}>
+          {error && <div className="auth-error">{error}</div>}
           <div className="form-row">
             <div className="form-group">
               <label className="form-label">Temp ({tempUnitLabel()})</label>

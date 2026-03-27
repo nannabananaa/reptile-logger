@@ -201,19 +201,23 @@ export async function fetchLogs(reptileId) {
 
 export async function createLog(reptileId, log) {
   const userId = await getUserId();
+  const row = {
+    reptile_id: reptileId,
+    user_id: userId,
+    temperature: log.temperature,
+    humidity: log.humidity,
+    weight: log.weight,
+    fed: log.fed,
+    vitamins: log.vitamins,
+    notes: log.notes,
+  };
+  const cf = log.category_fields;
+  if (cf && Object.keys(cf).length > 0) {
+    row.category_fields = cf;
+  }
   const { data, error } = await supabase
     .from('logs')
-    .insert({
-      reptile_id: reptileId,
-      user_id: userId,
-      temperature: log.temperature,
-      humidity: log.humidity,
-      weight: log.weight,
-      fed: log.fed,
-      vitamins: log.vitamins,
-      notes: log.notes,
-      category_fields: log.category_fields || {},
-    })
+    .insert(row)
     .select()
     .single();
 
