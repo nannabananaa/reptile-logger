@@ -133,20 +133,33 @@ export async function fetchReptileById(id) {
 
 export async function createReptile({ name, species, dob, photo, category }) {
   const userId = await getUserId();
-  const { data, error } = await supabase
-    .from('reptiles')
-    .insert({
-      user_id: userId,
-      name,
-      species: species || '',
-      dob: dob || null,
-      photo: photo || null,
-      category: category || 'other',
-    })
-    .select()
-    .single();
+  const row = {
+    user_id: userId,
+    name,
+    species: species || '',
+    dob: dob || null,
+    photo: photo || null,
+  };
+  // Only include category if the caller supplied one. Avoids tripping any
+  // leftover CHECK constraint from the pre-simplification schema (which only
+  // permitted the old plural values like 'snakes', 'geckos', 'other', etc.).
+  if (category) row.category = category;
 
-  if (error) throw error;
+  let { data, error } = await supabase.from('reptiles').insert(row).select().single();
+
+  // Fallback: if the category column has a CHECK constraint that rejects the
+  // new singular values (23514 = check_violation), retry without category so
+  // the reptile still saves. The user can correct it from the edit screen.
+  if (error && error.code === '23514' && 'category' in row) {
+    console.warn('reptiles.category rejected by CHECK constraint; retrying without category. Run supabase/relax-reptile-category.sql to fix permanently.');
+    const { category: _omit, ...without } = row;
+    ({ data, error } = await supabase.from('reptiles').insert(without).select().single());
+  }
+
+  if (error) {
+    console.error('createReptile insert failed:', error);
+    throw error;
+  }
   return data;
 }
 

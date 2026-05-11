@@ -7,53 +7,84 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [ready, setReady] = useState(false);
-  const profileLoadedFor = useRef(null);
+  // Monotonically increasing ID — stale fetch results (older than current) are discarded.
+  const loadIdRef = useRef(0);
+  // Set while signIn / signOut / signUp are mid-flight so the auth listener
+  // doesn't race them with duplicate session/profile loads.
+  const explicitAuthRef = useRef(false);
 
-  async function loadProfile(userId) {
-    profileLoadedFor.current = userId;
+  async function fetchProfile(userId) {
+    const loadId = ++loadIdRef.current;
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single();
-      if (profileLoadedFor.current !== userId) return;
-      if (!error && data) setProfile(data);
-      else setProfile(null);
-    } catch {
-      if (profileLoadedFor.current === userId) setProfile(null);
+      if (loadIdRef.current !== loadId) return { stale: true };
+      if (!error && data) return { profile: data };
+      if (error && error.code === 'PGRST116') return { profile: null }; // row doesn't exist
+      return { error: error || new Error('Unknown profile fetch error') };
+    } catch (err) {
+      if (loadIdRef.current !== loadId) return { stale: true };
+      return { error: err };
+    }
+  }
+
+  // Fully resolve session+profile state from a session object. Only updates
+  // profile if the fetch succeeded or definitively returned no row — transient
+  // errors leave the existing profile state intact (no destructive overwrite).
+  async function syncFromSession(newSession) {
+    setSession(newSession);
+    if (newSession?.user) {
+      const result = await fetchProfile(newSession.user.id);
+      if (result.stale) return;
+      if (result.error) {
+        console.error('Profile fetch failed:', result.error);
+        return;
+      }
+      setProfile(result.profile);
+    } else {
+      setProfile(null);
     }
   }
 
   useEffect(() => {
-    let initialLoad = true;
+    let mounted = true;
+    let bootstrapped = false;
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      if (session?.user) {
-        await loadProfile(session.user.id);
+    (async () => {
+      const { data: { session: initialSession } } = await supabase.auth.getSession();
+      if (!mounted) return;
+      await syncFromSession(initialSession);
+      bootstrapped = true;
+      if (mounted) setReady(true);
+    })();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      if (!mounted || !bootstrapped) return;
+      // INITIAL_SESSION is handled by the getSession() bootstrap above.
+      if (event === 'INITIAL_SESSION') return;
+      // signIn / signOut / signUp drive their own session+profile transitions.
+      // Skip listener-side handling during those to avoid duplicate / racing loads.
+      if (explicitAuthRef.current) return;
+
+      if (event === 'TOKEN_REFRESHED') {
+        // Same user, just a fresher token — no UI gate needed.
+        setSession(newSession);
+        return;
       }
-      setReady(true);
-      initialLoad = false;
+      // SIGNED_IN, SIGNED_OUT, USER_UPDATED, PASSWORD_RECOVERY etc. from outside
+      // this tab (e.g. another tab signed in/out). Resync fully behind the ready gate.
+      setReady(false);
+      await syncFromSession(newSession);
+      if (mounted) setReady(true);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      // During initial load, getSession handles everything.
-      // After signIn/signOut, those functions handle everything.
-      // This listener only needs to handle external auth changes (e.g. token refresh).
-      if (initialLoad) return;
-      setSession(session);
-      if (session?.user) {
-        if (profileLoadedFor.current !== session.user.id) {
-          loadProfile(session.user.id);
-        }
-      } else {
-        setProfile(null);
-        profileLoadedFor.current = null;
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   async function signUp(email, password, displayName) {
@@ -75,28 +106,39 @@ export function AuthProvider({ children }) {
   }
 
   async function signIn(email, password) {
-    // Block all route rendering until profile is fully loaded.
+    explicitAuthRef.current = true;
     setReady(false);
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (data?.session) {
-      setSession(data.session);
-      await loadProfile(data.session.user.id);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) return { error };
+      await syncFromSession(data.session);
+      return { error: null };
+    } finally {
+      explicitAuthRef.current = false;
+      setReady(true);
     }
-    setReady(true);
-    return { error };
   }
 
   async function signOut() {
+    explicitAuthRef.current = true;
     setReady(false);
-    setSession(null);
-    setProfile(null);
-    profileLoadedFor.current = null;
-    await supabase.auth.signOut();
-    setReady(true);
+    try {
+      await supabase.auth.signOut();
+      // Invalidate any in-flight profile fetches.
+      loadIdRef.current++;
+      setSession(null);
+      setProfile(null);
+    } finally {
+      explicitAuthRef.current = false;
+      setReady(true);
+    }
   }
 
   async function refreshProfile() {
-    if (session?.user) await loadProfile(session.user.id);
+    if (!session?.user) return;
+    const result = await fetchProfile(session.user.id);
+    if (result.stale || result.error) return;
+    setProfile(result.profile);
   }
 
   return (

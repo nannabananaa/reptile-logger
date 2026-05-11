@@ -44,7 +44,11 @@ export default function AddReptile() {
 
   async function handleSave(e) {
     e.preventDefault();
-    if (!name.trim() || saving) return;
+    if (saving) return;
+    if (!name.trim()) {
+      setError('Name is required');
+      return;
+    }
 
     setSaving(true);
     setError('');
@@ -56,12 +60,14 @@ export default function AddReptile() {
         species: species.trim(),
         dob: dob || null,
         photo: compressed,
-        category,
+        category: category || null,
       });
       navigate('/');
     } catch (err) {
       console.error('Failed to save reptile:', err);
-      setError(`Failed to save: ${err.message}`);
+      const detail = err.code ? ` [${err.code}]` : '';
+      const hint = err.hint ? ` — ${err.hint}` : '';
+      setError(`Failed to save: ${err.message || 'Unknown error'}${detail}${hint}`);
       setSaving(false);
     }
   }
@@ -98,6 +104,7 @@ export default function AddReptile() {
             placeholder="e.g. Noodle"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            required
             autoFocus
           />
         </div>
