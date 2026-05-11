@@ -72,12 +72,16 @@ export async function updateProfile({ display_name }) {
 
 /* ── Reptiles ── */
 
+// Only the columns the home/quick-log lists actually render. Skips dob,
+// dual_sides, category, user_id, created_at etc. to keep the payload small.
+const REPTILE_LIST_COLUMNS = 'id, name, species, photo, logs(created_at)';
+
 export async function fetchReptiles() {
   const userId = await getUserId();
 
   const { data, error } = await supabase
     .from('reptiles')
-    .select('*, logs(created_at)')
+    .select(REPTILE_LIST_COLUMNS)
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
 
@@ -102,7 +106,7 @@ export async function fetchSharedReptiles() {
   const reptileIds = [...new Set(shares.map((s) => s.reptile_id))];
   const { data: reptiles, error: rErr } = await supabase
     .from('reptiles')
-    .select('*, logs(created_at)')
+    .select(REPTILE_LIST_COLUMNS)
     .in('id', reptileIds);
   if (rErr) throw rErr;
   const reptileMap = {};
@@ -172,13 +176,30 @@ export async function updateReptileById(id, updates) {
   };
   if (updates.category !== undefined) updateObj.category = updates.category;
   if (updates.dual_sides !== undefined) updateObj.dual_sides = updates.dual_sides;
-  const { data, error } = await supabase
-    .from('reptiles')
-    .update(updateObj)
-    .eq('id', id)
-    .select()
-    .single();
 
+  // Auto-retry without any column the DB doesn't have yet (42703). Lets the
+  // "Track Both Sides" toggle save name/photo/etc. cleanly before the user
+  // runs supabase/add-feature-batch.sql, instead of failing the whole update.
+  async function tryUpdate(row) {
+    const { data, error } = await supabase
+      .from('reptiles')
+      .update(row)
+      .eq('id', id)
+      .select()
+      .single();
+    if (!error) return { data };
+    if (error.code !== '42703') return { error };
+    const match = /column "?([a-z_]+)"? of relation "reptiles" does not exist/i.exec(error.message || '');
+    const missing = match?.[1];
+    if (missing && missing in row) {
+      console.warn(`reptiles.${missing} column missing — retrying without it. Run supabase/add-feature-batch.sql to add it.`);
+      const { [missing]: _omit, ...rest } = row;
+      return tryUpdate(rest);
+    }
+    return { error };
+  }
+
+  const { data, error } = await tryUpdate(updateObj);
   if (error) throw error;
   return data;
 }

@@ -5,6 +5,18 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig({
   build: {
     chunkSizeWarningLimit: 700,
+    rollupOptions: {
+      output: {
+        // Split heavy / page-specific vendor code into dedicated chunks so the
+        // initial download stays small. Recharts in particular is large and
+        // is only needed on the reptile detail page.
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'supabase': ['@supabase/supabase-js'],
+          'recharts': ['recharts'],
+        },
+      },
+    },
   },
   plugins: [
     react(),

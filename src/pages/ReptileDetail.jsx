@@ -390,26 +390,26 @@ function ChartCard({ title, dataKey, color, data, unit, convertFn }) {
     <div className="chart-card">
       <h4 className="chart-title">{title}</h4>
       <div className="chart-wrap">
-        <ResponsiveContainer width="100%" height={240}>
-          <LineChart data={filtered} margin={{ top: 8, right: 12, bottom: 24, left: -16 }}>
+        <ResponsiveContainer width="100%" height={280} debounce={120}>
+          <LineChart data={filtered} margin={{ top: 8, right: 16, bottom: 32, left: -12 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
             <XAxis
               dataKey="date"
-              tick={{ fill: '#a8a090', fontSize: 13 }}
+              tick={{ fill: '#bdb6a8', fontSize: 14 }}
               tickLine={false}
               axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
               angle={-45}
               textAnchor="end"
-              height={60}
-              tickMargin={10}
-              minTickGap={32}
+              height={72}
+              tickMargin={12}
+              minTickGap={48}
               interval="preserveStartEnd"
             />
             <YAxis
-              tick={{ fill: '#a8a090', fontSize: 12 }}
+              tick={{ fill: '#bdb6a8', fontSize: 13 }}
               tickLine={false}
               axisLine={false}
-              width={45}
+              width={44}
             />
             <Tooltip
               contentStyle={{
@@ -1079,6 +1079,7 @@ function EditReptileModal({ reptile, onClose, onSave }) {
   const [photo, setPhoto] = useState(reptile.photo);
   const [dualSides, setDualSides] = useState(!!reptile.dual_sides);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   function handlePhoto(e) {
     const file = e.target.files?.[0];
@@ -1092,6 +1093,7 @@ function EditReptileModal({ reptile, onClose, onSave }) {
     e.preventDefault();
     if (!name.trim() || saving) return;
     setSaving(true);
+    setError('');
 
     try {
       await updateReptileById(reptile.id, {
@@ -1105,6 +1107,8 @@ function EditReptileModal({ reptile, onClose, onSave }) {
       onSave();
     } catch (err) {
       console.error('Failed to update reptile:', err);
+      const detail = err.code ? ` [${err.code}]` : '';
+      setError(`Failed to save: ${err.message || 'Unknown error'}${detail}`);
       setSaving(false);
     }
   }
@@ -1121,6 +1125,7 @@ function EditReptileModal({ reptile, onClose, onSave }) {
           </button>
         </div>
         <form className="form modal-body" onSubmit={handleSave}>
+          {error && <div className="auth-error">{error}</div>}
           <div className="form-group">
             <label className="form-label">Photo</label>
             <div className="photo-upload photo-upload-sm">

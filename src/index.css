@@ -905,7 +905,9 @@ select.form-input {
 }
 
 .chart-wrap {
-  margin: 0 -8px;
+  margin: 0 -10px;
+  /* Bottom padding leaves room for the angled date labels at every viewport */
+  padding-bottom: 4px;
 }
 
 .chart-nodata {
