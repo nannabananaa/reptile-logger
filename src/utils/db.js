@@ -72,9 +72,11 @@ export async function updateProfile({ display_name }) {
 
 /* ── Reptiles ── */
 
-// Only the columns the home/quick-log lists actually render. Skips dob,
-// dual_sides, category, user_id, created_at etc. to keep the payload small.
-const REPTILE_LIST_COLUMNS = 'id, name, species, photo, logs(created_at)';
+// Only the columns the home/quick-log lists actually render. Photos are
+// deliberately excluded — each photo is a multi-KB base64 blob and pulling
+// dozens of them for a list view is the dominant cause of slow home loads.
+// The detail page fetches the full row (including photo) via fetchReptileById.
+const REPTILE_LIST_COLUMNS = 'id, name, species, category, logs(created_at)';
 
 export async function fetchReptiles() {
   const userId = await getUserId();
@@ -245,10 +247,6 @@ export async function createLog(reptileId, log) {
     fed: log.fed,
     vitamins: log.vitamins,
     notes: log.notes,
-    warm_temp: log.warm_temp,
-    cool_temp: log.cool_temp,
-    warm_humidity: log.warm_humidity,
-    cool_humidity: log.cool_humidity,
     vet_notes: log.vet_notes,
     enclosure_cleaned_date: log.enclosure_cleaned_date,
   };

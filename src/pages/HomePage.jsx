@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { fetchReptiles, fetchSharedReptiles, fetchPendingInvites, respondToInvite, deleteReptileById } from '../utils/db';
 import { getLastLogDate, timeAgo } from '../utils/storage';
+import { getCategoryLabel } from '../utils/categoryFields';
 
 export default function HomePage() {
   const [reptiles, setReptiles] = useState([]);
@@ -123,14 +124,15 @@ export default function HomePage() {
                     return (
                       <div key={reptile.id} className="reptile-card-wrap">
                         <Link to={`/reptile/${reptile.id}`} className="reptile-card">
-                          {reptile.photo ? (
-                            <img src={reptile.photo} alt={reptile.name} className="reptile-card-img" />
-                          ) : (
-                            <div className="reptile-card-placeholder">🦎</div>
-                          )}
+                          <div className="reptile-card-placeholder">🦎</div>
                           <div className="reptile-card-info">
                             <div className="reptile-card-name">{reptile.name}</div>
-                            <div className="reptile-card-species">{reptile.species}</div>
+                            {reptile.category && (
+                              <div className="reptile-card-category">{getCategoryLabel(reptile.category)}</div>
+                            )}
+                            {reptile.species && (
+                              <div className="reptile-card-species">{reptile.species}</div>
+                            )}
                             <div className="reptile-card-lastlog">
                               {lastLog ? timeAgo(lastLog) : 'No logs yet'}
                             </div>
@@ -172,14 +174,15 @@ export default function HomePage() {
                       return (
                         <div key={share.id} className="reptile-card-wrap">
                           <Link to={`/reptile/${reptile.id}`} className="reptile-card">
-                            {reptile.photo ? (
-                              <img src={reptile.photo} alt={reptile.name} className="reptile-card-img" />
-                            ) : (
-                              <div className="reptile-card-placeholder">🦎</div>
-                            )}
+                            <div className="reptile-card-placeholder">🦎</div>
                             <div className="reptile-card-info">
                               <div className="reptile-card-name">{reptile.name}</div>
-                              <div className="reptile-card-species">{reptile.species}</div>
+                              {reptile.category && (
+                                <div className="reptile-card-category">{getCategoryLabel(reptile.category)}</div>
+                              )}
+                              {reptile.species && (
+                                <div className="reptile-card-species">{reptile.species}</div>
+                              )}
                               <div className="shared-badge">
                                 Shared by {share.owner?.display_name || 'Unknown'}
                               </div>
@@ -265,14 +268,11 @@ function QuickLogModal({ reptiles, sharedReptiles, onPick, onClose }) {
           <div className="quick-log-list">
             {all.map((r) => (
               <button key={r.id} className="quick-log-item" onClick={() => onPick(r.id)}>
-                {r.photo ? (
-                  <img src={r.photo} alt={r.name} className="quick-log-img" />
-                ) : (
-                  <div className="quick-log-placeholder">🦎</div>
-                )}
+                <div className="quick-log-placeholder">🦎</div>
                 <div className="quick-log-info">
                   <span className="quick-log-name">{r.name}</span>
-                  {r.species && <span className="quick-log-species">{r.species}</span>}
+                  {r.category && <span className="quick-log-species">{getCategoryLabel(r.category)}{r.species ? ` — ${r.species}` : ''}</span>}
+                  {!r.category && r.species && <span className="quick-log-species">{r.species}</span>}
                   {r._from && <span className="quick-log-shared">Shared by {r._from}</span>}
                 </div>
               </button>

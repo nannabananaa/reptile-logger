@@ -118,19 +118,23 @@ export default function ReptileDetail() {
     return { fedCount, vitaminCounts, total: filteredLogs.length };
   }, [filteredLogs]);
 
+  // Charts read the same filter the Logs tab uses, so flipping tabs keeps
+  // your selected time window. Sorted ascending for trend display.
   const chartData = useMemo(() => {
-    return [...logs]
+    return [...filteredLogs]
       .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-      .map((l) => ({
-        // "Mar 26" format, used as a label on the X axis.
-        date: new Date(l.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        // Prefer warm-side reading for dual-side logs so charts stay populated
-        // when the user uses dual tracking on a given reptile.
-        temperature: l.warm_temp ?? l.temperature,
-        humidity: l.warm_humidity ?? l.humidity,
-        weight: l.weight,
-      }));
-  }, [logs]);
+      .map((l) => {
+        const cf = l.category_fields || {};
+        return {
+          date: new Date(l.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          // Dual-side logs live in category_fields. Fall back to the legacy
+          // top-level columns for any older rows that used those.
+          temperature: cf.warm_temp ?? l.warm_temp ?? l.temperature,
+          humidity: cf.warm_humidity ?? l.warm_humidity ?? l.humidity,
+          weight: l.weight,
+        };
+      });
+  }, [filteredLogs]);
 
   if (loading) {
     return (
@@ -156,7 +160,6 @@ export default function ReptileDetail() {
   }
 
   const age = calculateAge(reptile.dob);
-  const hasChartData = chartData.length >= 2;
   const category = reptile.category || '';
 
   async function handleDeleteReptile() {
@@ -244,40 +247,14 @@ export default function ReptileDetail() {
       {/* Tab Content */}
       {activeTab === 'logs' ? (
         <div className="log-section">
-          {/* Filter */}
-          <div className="log-filters">
-            {['all', '7d', '30d', 'custom'].map((f) => (
-              <button
-                key={f}
-                className={`filter-chip ${filter === f ? 'filter-chip-active' : ''}`}
-                onClick={() => setFilter(f)}
-              >
-                {f === 'all' ? 'All' : f === '7d' ? '7 Days' : f === '30d' ? '30 Days' : 'Custom'}
-              </button>
-            ))}
-          </div>
-          {filter === 'custom' && (
-            <div className="date-range-row">
-              <div className="date-range-field">
-                <label className="date-range-label">From</label>
-                <input
-                  className="form-input"
-                  type="date"
-                  value={customStart}
-                  onChange={(e) => setCustomStart(e.target.value)}
-                />
-              </div>
-              <div className="date-range-field">
-                <label className="date-range-label">To</label>
-                <input
-                  className="form-input"
-                  type="date"
-                  value={customEnd}
-                  onChange={(e) => setCustomEnd(e.target.value)}
-                />
-              </div>
-            </div>
-          )}
+          <FilterChips
+            filter={filter}
+            setFilter={setFilter}
+            customStart={customStart}
+            setCustomStart={setCustomStart}
+            customEnd={customEnd}
+            setCustomEnd={setCustomEnd}
+          />
 
           {/* Summary */}
           {filteredLogs.length > 0 && (
@@ -315,11 +292,24 @@ export default function ReptileDetail() {
         </div>
       ) : (
         <div className="charts-section">
-          {!hasChartData ? (
+          <FilterChips
+            filter={filter}
+            setFilter={setFilter}
+            customStart={customStart}
+            setCustomStart={setCustomStart}
+            customEnd={customEnd}
+            setCustomEnd={setCustomEnd}
+          />
+
+          {chartData.length < 2 ? (
             <div className="empty-state" style={{ padding: '40px 20px' }}>
               <div className="empty-state-icon" style={{ fontSize: 48 }}>📈</div>
-              <p className="empty-state-text">Need at least 2 logs to show trends</p>
-              <p className="empty-state-hint">Keep logging to see your charts!</p>
+              <p className="empty-state-text">
+                {logs.length < 2 ? 'Need at least 2 logs to show trends' : 'Not enough logs in this range'}
+              </p>
+              <p className="empty-state-hint">
+                {logs.length < 2 ? 'Keep logging to see your charts!' : 'Try a wider time range.'}
+              </p>
             </div>
           ) : (
             <>
@@ -374,6 +364,48 @@ export default function ReptileDetail() {
   );
 }
 
+/* ── Filter Chips ── */
+// Shared by the Logs and Charts tabs so the same time-window controls both.
+function FilterChips({ filter, setFilter, customStart, setCustomStart, customEnd, setCustomEnd }) {
+  return (
+    <>
+      <div className="log-filters">
+        {['all', '7d', '30d', 'custom'].map((f) => (
+          <button
+            key={f}
+            className={`filter-chip ${filter === f ? 'filter-chip-active' : ''}`}
+            onClick={() => setFilter(f)}
+          >
+            {f === 'all' ? 'All' : f === '7d' ? '7 Days' : f === '30d' ? '30 Days' : 'Custom'}
+          </button>
+        ))}
+      </div>
+      {filter === 'custom' && (
+        <div className="date-range-row">
+          <div className="date-range-field">
+            <label className="date-range-label">From</label>
+            <input
+              className="form-input"
+              type="date"
+              value={customStart}
+              onChange={(e) => setCustomStart(e.target.value)}
+            />
+          </div>
+          <div className="date-range-field">
+            <label className="date-range-label">To</label>
+            <input
+              className="form-input"
+              type="date"
+              value={customEnd}
+              onChange={(e) => setCustomEnd(e.target.value)}
+            />
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 /* ── Chart Card ── */
 function ChartCard({ title, dataKey, color, data, unit, convertFn }) {
   const filtered = data.filter((d) => d[dataKey] != null).map((d) => convertFn ? { ...d, [dataKey]: convertFn(d[dataKey]) } : d);
@@ -390,26 +422,21 @@ function ChartCard({ title, dataKey, color, data, unit, convertFn }) {
     <div className="chart-card">
       <h4 className="chart-title">{title}</h4>
       <div className="chart-wrap">
-        <ResponsiveContainer width="100%" height={280} debounce={120}>
-          <LineChart data={filtered} margin={{ top: 8, right: 16, bottom: 32, left: -12 }}>
+        <ResponsiveContainer width="100%" height={220}>
+          <LineChart data={filtered} margin={{ top: 8, right: 12, bottom: 0, left: -16 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
             <XAxis
               dataKey="date"
-              tick={{ fill: '#bdb6a8', fontSize: 14 }}
+              tick={{ fill: '#a8a090', fontSize: 11 }}
               tickLine={false}
               axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
-              angle={-45}
-              textAnchor="end"
-              height={72}
-              tickMargin={12}
-              minTickGap={48}
-              interval="preserveStartEnd"
+              minTickGap={24}
             />
             <YAxis
-              tick={{ fill: '#bdb6a8', fontSize: 13 }}
+              tick={{ fill: '#a8a090', fontSize: 11 }}
               tickLine={false}
               axisLine={false}
-              width={44}
+              width={45}
             />
             <Tooltip
               contentStyle={{
@@ -445,12 +472,21 @@ function LogCard({ log, category, onDelete, isOwner }) {
   const loggedBy = log.profile?.display_name;
   const categoryFieldDefs = getCategoryFields(category);
   const cf = log.category_fields || {};
+  // Dual-side readings live in category_fields. Fall back to legacy top-level
+  // columns for any rows written by an older build.
+  const warmTemp = cf.warm_temp ?? log.warm_temp;
+  const coolTemp = cf.cool_temp ?? log.cool_temp;
+  const warmHumidity = cf.warm_humidity ?? log.warm_humidity;
+  const coolHumidity = cf.cool_humidity ?? log.cool_humidity;
+  // Don't render the dual-side json keys in the generic category section.
+  const DUAL_KEYS = new Set(['warm_temp', 'cool_temp', 'warm_humidity', 'cool_humidity', 'photo']);
   const hasCategoryData = categoryFieldDefs.some((f) => {
+    if (DUAL_KEYS.has(f.key)) return false;
     const val = cf[f.key];
     return val != null && val !== '' && val !== false;
   });
-  const hasDualTemp = log.warm_temp != null || log.cool_temp != null;
-  const hasDualHumidity = log.warm_humidity != null || log.cool_humidity != null;
+  const hasDualTemp = warmTemp != null || coolTemp != null;
+  const hasDualHumidity = warmHumidity != null || coolHumidity != null;
   const photo = cf.photo;
   const cleanedDate = log.enclosure_cleaned_date
     ? new Date(log.enclosure_cleaned_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -483,16 +519,16 @@ function LogCard({ log, category, onDelete, isOwner }) {
       <div className="log-card-stats">
         {hasDualTemp ? (
           <>
-            {log.warm_temp != null && (
+            {warmTemp != null && (
               <div className="log-stat">
                 <span className="log-stat-icon">🌡️</span>
-                <span>Warm {displayTemp(log.warm_temp)}</span>
+                <span>Warm {displayTemp(warmTemp)}</span>
               </div>
             )}
-            {log.cool_temp != null && (
+            {coolTemp != null && (
               <div className="log-stat">
                 <span className="log-stat-icon">❄️</span>
-                <span>Cool {displayTemp(log.cool_temp)}</span>
+                <span>Cool {displayTemp(coolTemp)}</span>
               </div>
             )}
           </>
@@ -506,16 +542,16 @@ function LogCard({ log, category, onDelete, isOwner }) {
         )}
         {hasDualHumidity ? (
           <>
-            {log.warm_humidity != null && (
+            {warmHumidity != null && (
               <div className="log-stat">
                 <span className="log-stat-icon">💧</span>
-                <span>Warm {log.warm_humidity}%</span>
+                <span>Warm {warmHumidity}%</span>
               </div>
             )}
-            {log.cool_humidity != null && (
+            {coolHumidity != null && (
               <div className="log-stat">
                 <span className="log-stat-icon">💧</span>
-                <span>Cool {log.cool_humidity}%</span>
+                <span>Cool {coolHumidity}%</span>
               </div>
             )}
           </>
@@ -793,13 +829,19 @@ function LogFormModal({ reptileId, category, dualSides, onClose, onSave }) {
       if (logPhoto) compressedPhoto = await compressPhoto(logPhoto);
       if (compressedPhoto) cleanedCategoryFields.photo = compressedPhoto;
 
+      // Dual-side readings ride along in the category_fields jsonb so the
+      // feature works without dedicated columns on the logs table. Single
+      // readings still go to the canonical temperature / humidity columns.
+      if (dualSides) {
+        if (warmTemp) cleanedCategoryFields.warm_temp = Number(warmTemp);
+        if (coolTemp) cleanedCategoryFields.cool_temp = Number(coolTemp);
+        if (warmHumidity) cleanedCategoryFields.warm_humidity = Number(warmHumidity);
+        if (coolHumidity) cleanedCategoryFields.cool_humidity = Number(coolHumidity);
+      }
+
       await createLog(reptileId, {
         temperature: !dualSides && temperature ? Number(temperature) : null,
         humidity: !dualSides && humidity ? Number(humidity) : null,
-        warm_temp: dualSides && warmTemp ? Number(warmTemp) : null,
-        cool_temp: dualSides && coolTemp ? Number(coolTemp) : null,
-        warm_humidity: dualSides && warmHumidity ? Number(warmHumidity) : null,
-        cool_humidity: dualSides && coolHumidity ? Number(coolHumidity) : null,
         weight: weight ? Number(weight) : null,
         fed,
         vitamins: selectedVitamins,
@@ -1077,6 +1119,7 @@ function EditReptileModal({ reptile, onClose, onSave }) {
   const [species, setSpecies] = useState(reptile.species || '');
   const [dob, setDob] = useState(reptile.dob || '');
   const [photo, setPhoto] = useState(reptile.photo);
+  const [photoChanged, setPhotoChanged] = useState(false);
   const [dualSides, setDualSides] = useState(!!reptile.dual_sides);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -1085,7 +1128,10 @@ function EditReptileModal({ reptile, onClose, onSave }) {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onloadend = () => setPhoto(reader.result);
+    reader.onloadend = () => {
+      setPhoto(reader.result);
+      setPhotoChanged(true);
+    };
     reader.readAsDataURL(file);
   }
 
@@ -1096,11 +1142,14 @@ function EditReptileModal({ reptile, onClose, onSave }) {
     setError('');
 
     try {
+      // Only run compression on freshly-uploaded photos; the existing photo
+      // was already compressed when it was first saved.
+      const photoToSave = photoChanged && photo ? await compressPhoto(photo) : photo;
       await updateReptileById(reptile.id, {
         name: name.trim(),
         species: species.trim(),
         dob: dob || null,
-        photo,
+        photo: photoToSave,
         category,
         dual_sides: dualSides,
       });
