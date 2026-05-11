@@ -171,6 +171,7 @@ export async function updateReptileById(id, updates) {
     photo: updates.photo,
   };
   if (updates.category !== undefined) updateObj.category = updates.category;
+  if (updates.dual_sides !== undefined) updateObj.dual_sides = updates.dual_sides;
   const { data, error } = await supabase
     .from('reptiles')
     .update(updateObj)
@@ -223,38 +224,38 @@ export async function createLog(reptileId, log) {
     fed: log.fed,
     vitamins: log.vitamins,
     notes: log.notes,
+    warm_temp: log.warm_temp,
+    cool_temp: log.cool_temp,
+    warm_humidity: log.warm_humidity,
+    cool_humidity: log.cool_humidity,
+    vet_notes: log.vet_notes,
+    enclosure_cleaned_date: log.enclosure_cleaned_date,
   };
   const cf = log.category_fields;
   const hasCategoryFields = cf && Object.keys(cf).length > 0;
+  const fullRow = hasCategoryFields ? { ...baseRow, category_fields: cf } : baseRow;
 
-  let data, error;
-  if (hasCategoryFields) {
-    // Try with category_fields first
-    ({ data, error } = await supabase
-      .from('logs')
-      .insert({ ...baseRow, category_fields: cf })
-      .select()
-      .single());
-    // If column doesn't exist, retry without it
-    if (error && error.code === '42703') {
-      console.warn('category_fields column missing — saving log without category data. Run the migration in supabase/add-category-fields-column.sql');
-      ({ data, error } = await supabase
-        .from('logs')
-        .insert(baseRow)
-        .select()
-        .single());
+  // Tries the insert. On a 42703 (undefined column) error from any of the
+  // newer columns, drops that column from the row and retries. Lets logs
+  // still save before the schema migration has been run.
+  async function tryInsert(row) {
+    const { data, error } = await supabase.from('logs').insert(row).select().single();
+    if (!error) return { data };
+    if (error.code !== '42703') return { error };
+    // Identify the missing column from the error message and retry without it.
+    const match = /column "?([a-z_]+)"? of relation "logs" does not exist/i.exec(error.message || '');
+    const missing = match?.[1];
+    if (missing && missing in row) {
+      console.warn(`logs.${missing} column missing — retrying without it. Run supabase/add-feature-batch.sql to add it.`);
+      const { [missing]: _omit, ...rest } = row;
+      return tryInsert(rest);
     }
-  } else {
-    ({ data, error } = await supabase
-      .from('logs')
-      .insert(baseRow)
-      .select()
-      .single());
+    return { error };
   }
 
+  const { data, error } = await tryInsert(fullRow);
   if (error) throw error;
 
-  // Attach profile
   const profileMap = await fetchProfilesByIds([userId]);
   return { ...data, profile: profileMap[userId] || null };
 }

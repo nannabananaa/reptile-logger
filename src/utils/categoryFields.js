@@ -11,10 +11,14 @@ const CATEGORY_FIELDS = {
   gecko: [
     { key: 'food_type', label: 'What was fed', type: 'select_other', options: ['Worms', 'Roaches', 'Crickets', 'Other'] },
     { key: 'shed_date', label: 'Last shed date', type: 'date' },
+    { key: 'shed_quality', label: 'Shed quality', type: 'select', options: ['Clean', 'Partial', 'Stuck'] },
   ],
   snake: [
     { key: 'food_type', label: 'What was fed', type: 'select_other', options: ['Mouse', 'Rat', 'Chick', 'Other'] },
+    { key: 'feeding_response', label: 'Feeding response', type: 'select', options: ['Ate eagerly', 'Refused', 'Struck but missed'] },
     { key: 'shed_date', label: 'Last shed date', type: 'date' },
+    { key: 'shed_quality', label: 'Shed quality', type: 'select', options: ['Clean', 'Partial', 'Stuck'] },
+    { key: 'length_inches', label: 'Length (inches)', type: 'number', placeholder: '36' },
   ],
 };
 
@@ -29,6 +33,9 @@ export function getCategoryLabel(value) {
 const FIELD_ICONS = {
   food_type: '🍽️',
   shed_date: '🐍',
+  shed_quality: '✨',
+  feeding_response: '🎯',
+  length_inches: '📏',
 };
 
 export function getFieldIcon(key) {

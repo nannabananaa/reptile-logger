@@ -18,21 +18,52 @@ const CHART_COLORS = {
   weight: '#a67c52',
 };
 
+function compressPhoto(dataUrl, maxWidth = 600) {
+  return new Promise((resolve) => {
+    if (!dataUrl) { resolve(null); return; }
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const scale = Math.min(1, maxWidth / img.width);
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.7));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 export default function ReptileDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { session } = useAuth();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [reptile, setReptile] = useState(null);
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('logs');
   const [filter, setFilter] = useState('all');
-  const [showLogForm, setShowLogForm] = useState(false);
+  const [customStart, setCustomStart] = useState('');
+  const [customEnd, setCustomEnd] = useState('');
+  const [showLogForm, setShowLogForm] = useState(!!searchParams.get('log'));
   const [showEditForm, setShowEditForm] = useState(!!searchParams.get('edit'));
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLogId, setDeleteLogId] = useState(null);
   const [showShareModal, setShowShareModal] = useState(false);
+
+  // Strip ?log=1 / ?edit=1 from the URL once their modal has opened so a
+  // back+forward navigation doesn't re-open them.
+  useEffect(() => {
+    if (searchParams.get('log') || searchParams.get('edit')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('log');
+      next.delete('edit');
+      setSearchParams(next, { replace: true });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isOwner = reptile && session && reptile.user_id === session.user.id;
 
@@ -59,11 +90,22 @@ export default function ReptileDetail() {
       (a, b) => new Date(b.created_at) - new Date(a.created_at)
     );
     if (filter === 'all') return sorted;
+    if (filter === 'custom') {
+      if (!customStart && !customEnd) return sorted;
+      const start = customStart ? new Date(customStart + 'T00:00:00') : null;
+      const end = customEnd ? new Date(customEnd + 'T23:59:59.999') : null;
+      return sorted.filter((l) => {
+        const d = new Date(l.created_at);
+        if (start && d < start) return false;
+        if (end && d > end) return false;
+        return true;
+      });
+    }
     const days = filter === '7d' ? 7 : 30;
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
     return sorted.filter((l) => new Date(l.created_at) >= cutoff);
-  }, [logs, filter]);
+  }, [logs, filter, customStart, customEnd]);
 
   const summary = useMemo(() => {
     const fedCount = filteredLogs.filter((l) => l.fed).length;
@@ -80,9 +122,12 @@ export default function ReptileDetail() {
     return [...logs]
       .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
       .map((l) => ({
+        // "Mar 26" format, used as a label on the X axis.
         date: new Date(l.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        temperature: l.temperature,
-        humidity: l.humidity,
+        // Prefer warm-side reading for dual-side logs so charts stay populated
+        // when the user uses dual tracking on a given reptile.
+        temperature: l.warm_temp ?? l.temperature,
+        humidity: l.warm_humidity ?? l.humidity,
         weight: l.weight,
       }));
   }, [logs]);
@@ -201,16 +246,38 @@ export default function ReptileDetail() {
         <div className="log-section">
           {/* Filter */}
           <div className="log-filters">
-            {['all', '7d', '30d'].map((f) => (
+            {['all', '7d', '30d', 'custom'].map((f) => (
               <button
                 key={f}
                 className={`filter-chip ${filter === f ? 'filter-chip-active' : ''}`}
                 onClick={() => setFilter(f)}
               >
-                {f === 'all' ? 'All' : f === '7d' ? '7 Days' : '30 Days'}
+                {f === 'all' ? 'All' : f === '7d' ? '7 Days' : f === '30d' ? '30 Days' : 'Custom'}
               </button>
             ))}
           </div>
+          {filter === 'custom' && (
+            <div className="date-range-row">
+              <div className="date-range-field">
+                <label className="date-range-label">From</label>
+                <input
+                  className="form-input"
+                  type="date"
+                  value={customStart}
+                  onChange={(e) => setCustomStart(e.target.value)}
+                />
+              </div>
+              <div className="date-range-field">
+                <label className="date-range-label">To</label>
+                <input
+                  className="form-input"
+                  type="date"
+                  value={customEnd}
+                  onChange={(e) => setCustomEnd(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Summary */}
           {filteredLogs.length > 0 && (
@@ -269,6 +336,7 @@ export default function ReptileDetail() {
         <LogFormModal
           reptileId={id}
           category={category}
+          dualSides={!!reptile.dual_sides}
           onClose={() => setShowLogForm(false)}
           onSave={() => { setShowLogForm(false); reload(); }}
         />
@@ -322,17 +390,23 @@ function ChartCard({ title, dataKey, color, data, unit, convertFn }) {
     <div className="chart-card">
       <h4 className="chart-title">{title}</h4>
       <div className="chart-wrap">
-        <ResponsiveContainer width="100%" height={200}>
-          <LineChart data={filtered} margin={{ top: 8, right: 12, bottom: 0, left: -16 }}>
+        <ResponsiveContainer width="100%" height={240}>
+          <LineChart data={filtered} margin={{ top: 8, right: 12, bottom: 24, left: -16 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
             <XAxis
               dataKey="date"
-              tick={{ fill: '#a8a090', fontSize: 11 }}
+              tick={{ fill: '#a8a090', fontSize: 13 }}
               tickLine={false}
               axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
+              angle={-45}
+              textAnchor="end"
+              height={60}
+              tickMargin={10}
+              minTickGap={32}
+              interval="preserveStartEnd"
             />
             <YAxis
-              tick={{ fill: '#a8a090', fontSize: 11 }}
+              tick={{ fill: '#a8a090', fontSize: 12 }}
               tickLine={false}
               axisLine={false}
               width={45}
@@ -375,12 +449,17 @@ function LogCard({ log, category, onDelete, isOwner }) {
     const val = cf[f.key];
     return val != null && val !== '' && val !== false;
   });
+  const hasDualTemp = log.warm_temp != null || log.cool_temp != null;
+  const hasDualHumidity = log.warm_humidity != null || log.cool_humidity != null;
+  const photo = cf.photo;
+  const cleanedDate = log.enclosure_cleaned_date
+    ? new Date(log.enclosure_cleaned_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : null;
 
   function formatFieldValue(field, value) {
     if (value == null || value === '' || value === false) return null;
     if (field.type === 'toggle') return value ? 'Yes' : null;
-    if (field.key === 'soak_duration_min') return `${value} min`;
-    if (field.key === 'water_temp' || field.key === 'basking_temp') return `${value}°F`;
+    if (field.key === 'length_inches') return `${value}"`;
     return String(value);
   }
 
@@ -398,18 +477,55 @@ function LogCard({ log, category, onDelete, isOwner }) {
           </svg>
         </button>
       </div>
+      {photo && (
+        <img src={photo} alt="Log photo" className="log-card-photo" />
+      )}
       <div className="log-card-stats">
-        {log.temperature != null && (
-          <div className="log-stat">
-            <span className="log-stat-icon">🌡️</span>
-            <span>{displayTemp(log.temperature)}</span>
-          </div>
+        {hasDualTemp ? (
+          <>
+            {log.warm_temp != null && (
+              <div className="log-stat">
+                <span className="log-stat-icon">🌡️</span>
+                <span>Warm {displayTemp(log.warm_temp)}</span>
+              </div>
+            )}
+            {log.cool_temp != null && (
+              <div className="log-stat">
+                <span className="log-stat-icon">❄️</span>
+                <span>Cool {displayTemp(log.cool_temp)}</span>
+              </div>
+            )}
+          </>
+        ) : (
+          log.temperature != null && (
+            <div className="log-stat">
+              <span className="log-stat-icon">🌡️</span>
+              <span>{displayTemp(log.temperature)}</span>
+            </div>
+          )
         )}
-        {log.humidity != null && (
-          <div className="log-stat">
-            <span className="log-stat-icon">💧</span>
-            <span>{log.humidity}%</span>
-          </div>
+        {hasDualHumidity ? (
+          <>
+            {log.warm_humidity != null && (
+              <div className="log-stat">
+                <span className="log-stat-icon">💧</span>
+                <span>Warm {log.warm_humidity}%</span>
+              </div>
+            )}
+            {log.cool_humidity != null && (
+              <div className="log-stat">
+                <span className="log-stat-icon">💧</span>
+                <span>Cool {log.cool_humidity}%</span>
+              </div>
+            )}
+          </>
+        ) : (
+          log.humidity != null && (
+            <div className="log-stat">
+              <span className="log-stat-icon">💧</span>
+              <span>{log.humidity}%</span>
+            </div>
+          )
         )}
         {log.weight != null && (
           <div className="log-stat">
@@ -422,8 +538,15 @@ function LogCard({ log, category, onDelete, isOwner }) {
           <span className={log.fed ? 'log-fed-yes' : 'log-fed-no'}>{log.fed ? 'Fed' : 'Not fed'}</span>
         </div>
       </div>
-      {hasCategoryData && (
+      {(hasCategoryData || cleanedDate) && (
         <div className="log-card-category">
+          {cleanedDate && (
+            <div className="log-stat log-stat-category">
+              <span className="log-stat-icon">🧽</span>
+              <span className="log-stat-clabel">Enclosure cleaned</span>
+              <span>{cleanedDate}</span>
+            </div>
+          )}
           {categoryFieldDefs.map((field) => {
             const display = formatFieldValue(field, cf[field.key]);
             if (!display) return null;
@@ -445,6 +568,12 @@ function LogCard({ log, category, onDelete, isOwner }) {
         </div>
       )}
       {log.notes && <p className="log-card-notes">{log.notes}</p>}
+      {log.vet_notes && (
+        <div className="log-card-vet">
+          <span className="log-card-vet-label">🩺 Vet / Medical</span>
+          <p className="log-card-notes">{log.vet_notes}</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -580,13 +709,20 @@ function ShareModal({ reptileId, onClose }) {
 }
 
 /* ── Log Form Modal ── */
-function LogFormModal({ reptileId, category, onClose, onSave }) {
+function LogFormModal({ reptileId, category, dualSides, onClose, onSave }) {
   const [temperature, setTemperature] = useState('');
   const [humidity, setHumidity] = useState('');
+  const [warmTemp, setWarmTemp] = useState('');
+  const [coolTemp, setCoolTemp] = useState('');
+  const [warmHumidity, setWarmHumidity] = useState('');
+  const [coolHumidity, setCoolHumidity] = useState('');
   const [weight, setWeight] = useState('');
   const [fed, setFed] = useState(false);
   const [selectedVitamins, setSelectedVitamins] = useState([]);
   const [notes, setNotes] = useState('');
+  const [vetNotes, setVetNotes] = useState('');
+  const [cleaningDate, setCleaningDate] = useState('');
+  const [logPhoto, setLogPhoto] = useState(null);
   const [vitaminList, setVitaminList] = useState(getVitamins());
   const [showVitaminEditor, setShowVitaminEditor] = useState(false);
   const [newVitamin, setNewVitamin] = useState('');
@@ -595,6 +731,14 @@ function LogFormModal({ reptileId, category, onClose, onSave }) {
   const [error, setError] = useState(null);
 
   const categoryFieldDefs = getCategoryFields(category);
+
+  function handleLogPhoto(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => setLogPhoto(reader.result);
+    reader.readAsDataURL(file);
+  }
 
   function setCategoryField(key, value) {
     setCategoryFieldValues((prev) => ({ ...prev, [key]: value }));
@@ -645,13 +789,23 @@ function LogFormModal({ reptileId, category, onClose, onSave }) {
     }
 
     try {
+      let compressedPhoto = null;
+      if (logPhoto) compressedPhoto = await compressPhoto(logPhoto);
+      if (compressedPhoto) cleanedCategoryFields.photo = compressedPhoto;
+
       await createLog(reptileId, {
-        temperature: temperature ? Number(temperature) : null,
-        humidity: humidity ? Number(humidity) : null,
+        temperature: !dualSides && temperature ? Number(temperature) : null,
+        humidity: !dualSides && humidity ? Number(humidity) : null,
+        warm_temp: dualSides && warmTemp ? Number(warmTemp) : null,
+        cool_temp: dualSides && coolTemp ? Number(coolTemp) : null,
+        warm_humidity: dualSides && warmHumidity ? Number(warmHumidity) : null,
+        cool_humidity: dualSides && coolHumidity ? Number(coolHumidity) : null,
         weight: weight ? Number(weight) : null,
         fed,
         vitamins: selectedVitamins,
         notes: notes.trim() || null,
+        vet_notes: vetNotes.trim() || null,
+        enclosure_cleaned_date: cleaningDate || null,
         category_fields: cleanedCategoryFields,
       });
       onSave();
@@ -675,16 +829,41 @@ function LogFormModal({ reptileId, category, onClose, onSave }) {
         </div>
         <form className="form modal-body" onSubmit={handleSave}>
           {error && <div className="auth-error">{error}</div>}
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">Temp ({tempUnitLabel()})</label>
-              <input className="form-input" type="number" step="0.1" placeholder="95" value={temperature} onChange={(e) => setTemperature(e.target.value)} />
+          {dualSides ? (
+            <>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Warm Temp ({tempUnitLabel()})</label>
+                  <input className="form-input" type="number" step="0.1" placeholder="95" value={warmTemp} onChange={(e) => setWarmTemp(e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Cool Temp ({tempUnitLabel()})</label>
+                  <input className="form-input" type="number" step="0.1" placeholder="75" value={coolTemp} onChange={(e) => setCoolTemp(e.target.value)} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Warm Humidity (%)</label>
+                  <input className="form-input" type="number" step="1" placeholder="60" value={warmHumidity} onChange={(e) => setWarmHumidity(e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Cool Humidity (%)</label>
+                  <input className="form-input" type="number" step="1" placeholder="70" value={coolHumidity} onChange={(e) => setCoolHumidity(e.target.value)} />
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Temp ({tempUnitLabel()})</label>
+                <input className="form-input" type="number" step="0.1" placeholder="95" value={temperature} onChange={(e) => setTemperature(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Humidity (%)</label>
+                <input className="form-input" type="number" step="1" placeholder="60" value={humidity} onChange={(e) => setHumidity(e.target.value)} />
+              </div>
             </div>
-            <div className="form-group">
-              <label className="form-label">Humidity (%)</label>
-              <input className="form-input" type="number" step="1" placeholder="60" value={humidity} onChange={(e) => setHumidity(e.target.value)} />
-            </div>
-          </div>
+          )}
           <div className="form-row">
             <div className="form-group">
               <label className="form-label">Weight ({weightUnitLabel()})</label>
@@ -751,6 +930,46 @@ function LogFormModal({ reptileId, category, onClose, onSave }) {
           <div className="form-group">
             <label className="form-label">Notes</label>
             <textarea className="form-input form-textarea" placeholder="Any observations..." value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Vet / Medical Notes</label>
+            <textarea
+              className="form-input form-textarea"
+              placeholder="Vet visits, medications, illness, treatments..."
+              value={vetNotes}
+              onChange={(e) => setVetNotes(e.target.value)}
+              rows={3}
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Enclosure Cleaning Date</label>
+            <input
+              className="form-input"
+              type="date"
+              value={cleaningDate}
+              onChange={(e) => setCleaningDate(e.target.value)}
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Photo (optional)</label>
+            <div className="photo-upload photo-upload-sm">
+              {logPhoto ? (
+                <img src={logPhoto} alt="Log photo preview" className="photo-upload-preview" />
+              ) : (
+                <div className="photo-upload-placeholder">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <path d="M21 15l-5-5L5 21" />
+                  </svg>
+                  <span>Tap to add photo</span>
+                </div>
+              )}
+              <input type="file" accept="image/*" onChange={handleLogPhoto} />
+            </div>
           </div>
 
           {/* Category-specific fields */}
@@ -858,6 +1077,7 @@ function EditReptileModal({ reptile, onClose, onSave }) {
   const [species, setSpecies] = useState(reptile.species || '');
   const [dob, setDob] = useState(reptile.dob || '');
   const [photo, setPhoto] = useState(reptile.photo);
+  const [dualSides, setDualSides] = useState(!!reptile.dual_sides);
   const [saving, setSaving] = useState(false);
 
   function handlePhoto(e) {
@@ -880,6 +1100,7 @@ function EditReptileModal({ reptile, onClose, onSave }) {
         dob: dob || null,
         photo,
         category,
+        dual_sides: dualSides,
       });
       onSave();
     } catch (err) {
@@ -938,6 +1159,14 @@ function EditReptileModal({ reptile, onClose, onSave }) {
           <div className="form-group">
             <label className="form-label">Date of Birth</label>
             <input className="form-input" type="date" value={dob} onChange={(e) => setDob(e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Track Both Sides of Enclosure</label>
+            <button type="button" className={`toggle ${dualSides ? 'toggle-on' : ''}`} onClick={() => setDualSides(!dualSides)}>
+              <span className="toggle-knob" />
+              <span className="toggle-label">{dualSides ? 'On' : 'Off'}</span>
+            </button>
+            <p className="form-hint">When on, logs ask for warm-side and cool-side temperature and humidity separately.</p>
           </div>
           <div className="form-actions">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>

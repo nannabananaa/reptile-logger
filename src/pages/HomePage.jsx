@@ -11,6 +11,7 @@ export default function HomePage() {
   const [error, setError] = useState(null);
   const [menuId, setMenuId] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
+  const [showQuickLog, setShowQuickLog] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -198,11 +199,36 @@ export default function HomePage() {
         </>
       )}
 
+      {(reptiles.length > 0 || sharedReptiles.length > 0) && (
+        <button
+          className="fab fab-secondary"
+          onClick={() => setShowQuickLog(true)}
+          aria-label="Quick log"
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M17 3a2.85 2.85 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+            <path d="m15 5 4 4" />
+          </svg>
+        </button>
+      )}
+
       <button className="fab" onClick={() => navigate('/add')} aria-label="Add reptile">
         <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
           <path d="M12 5v14M5 12h14" />
         </svg>
       </button>
+
+      {showQuickLog && (
+        <QuickLogModal
+          reptiles={reptiles}
+          sharedReptiles={sharedReptiles}
+          onPick={(reptileId) => {
+            setShowQuickLog(false);
+            navigate(`/reptile/${reptileId}?log=1`);
+          }}
+          onClose={() => setShowQuickLog(false)}
+        />
+      )}
 
       {deleteId && (
         <ConfirmOverlay
@@ -212,6 +238,49 @@ export default function HomePage() {
         />
       )}
     </main>
+  );
+}
+
+function QuickLogModal({ reptiles, sharedReptiles, onPick, onClose }) {
+  const all = [
+    ...reptiles.map((r) => ({ ...r, _from: null })),
+    ...sharedReptiles
+      .filter((s) => s.reptile)
+      .map((s) => ({ ...s.reptile, _from: s.owner?.display_name })),
+  ];
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>Quick Log</h3>
+          <button className="icon-btn" onClick={onClose} aria-label="Close">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="modal-body">
+          <p className="quick-log-hint">Pick a reptile to log for:</p>
+          <div className="quick-log-list">
+            {all.map((r) => (
+              <button key={r.id} className="quick-log-item" onClick={() => onPick(r.id)}>
+                {r.photo ? (
+                  <img src={r.photo} alt={r.name} className="quick-log-img" />
+                ) : (
+                  <div className="quick-log-placeholder">🦎</div>
+                )}
+                <div className="quick-log-info">
+                  <span className="quick-log-name">{r.name}</span>
+                  {r.species && <span className="quick-log-species">{r.species}</span>}
+                  {r._from && <span className="quick-log-shared">Shared by {r._from}</span>}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
