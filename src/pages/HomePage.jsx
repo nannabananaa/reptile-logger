@@ -124,7 +124,11 @@ export default function HomePage() {
                     return (
                       <div key={reptile.id} className="reptile-card-wrap">
                         <Link to={`/reptile/${reptile.id}`} className="reptile-card">
-                          <div className="reptile-card-placeholder">🦎</div>
+                          {reptile.photo_thumbnail ? (
+                            <img src={reptile.photo_thumbnail} alt={reptile.name} className="reptile-card-img" loading="lazy" />
+                          ) : (
+                            <div className="reptile-card-placeholder">🦎</div>
+                          )}
                           <div className="reptile-card-info">
                             <div className="reptile-card-name">{reptile.name}</div>
                             {reptile.category && (
@@ -174,7 +178,11 @@ export default function HomePage() {
                       return (
                         <div key={share.id} className="reptile-card-wrap">
                           <Link to={`/reptile/${reptile.id}`} className="reptile-card">
-                            <div className="reptile-card-placeholder">🦎</div>
+                            {reptile.photo_thumbnail ? (
+                              <img src={reptile.photo_thumbnail} alt={reptile.name} className="reptile-card-img" loading="lazy" />
+                            ) : (
+                              <div className="reptile-card-placeholder">🦎</div>
+                            )}
                             <div className="reptile-card-info">
                               <div className="reptile-card-name">{reptile.name}</div>
                               {reptile.category && (
@@ -268,7 +276,11 @@ function QuickLogModal({ reptiles, sharedReptiles, onPick, onClose }) {
           <div className="quick-log-list">
             {all.map((r) => (
               <button key={r.id} className="quick-log-item" onClick={() => onPick(r.id)}>
-                <div className="quick-log-placeholder">🦎</div>
+                {r.photo_thumbnail ? (
+                  <img src={r.photo_thumbnail} alt={r.name} className="quick-log-placeholder" style={{ objectFit: 'cover', padding: 0 }} />
+                ) : (
+                  <div className="quick-log-placeholder">🦎</div>
+                )}
                 <div className="quick-log-info">
                   <span className="quick-log-name">{r.name}</span>
                   {r.category && <span className="quick-log-species">{getCategoryLabel(r.category)}{r.species ? ` — ${r.species}` : ''}</span>}

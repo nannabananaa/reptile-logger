@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { createReptile } from '../utils/db';
 import { CATEGORIES } from '../utils/categoryFields';
 
-function compressPhoto(dataUrl, maxWidth = 600) {
+function compressPhoto(dataUrl, maxWidth = 600, quality = 0.7) {
   return new Promise((resolve) => {
     if (!dataUrl) { resolve(null); return; }
     const img = new Image();
@@ -14,7 +14,7 @@ function compressPhoto(dataUrl, maxWidth = 600) {
       canvas.height = img.height * scale;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL('image/jpeg', 0.7));
+      resolve(canvas.toDataURL('image/jpeg', quality));
     };
     img.onerror = () => resolve(dataUrl);
     img.src = dataUrl;
@@ -54,12 +54,20 @@ export default function AddReptile() {
     setError('');
 
     try {
-      const compressed = await compressPhoto(photo);
+      // Two passes: a full-quality version for the detail page (600px) and
+      // a tiny thumbnail for the home grid (~240px, lower quality). The
+      // home query only loads the thumbnail, which keeps the home payload
+      // small even when the user has many reptiles with photos.
+      const [compressed, thumbnail] = await Promise.all([
+        compressPhoto(photo, 600, 0.7),
+        compressPhoto(photo, 240, 0.6),
+      ]);
       await createReptile({
         name: name.trim(),
         species: species.trim(),
         dob: dob || null,
         photo: compressed,
+        photo_thumbnail: thumbnail,
         category: category || null,
       });
       navigate('/');

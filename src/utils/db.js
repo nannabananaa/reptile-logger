@@ -72,23 +72,46 @@ export async function updateProfile({ display_name }) {
 
 /* ── Reptiles ── */
 
-// Only the columns the home/quick-log lists actually render. Photos are
-// deliberately excluded — each photo is a multi-KB base64 blob and pulling
-// dozens of them for a list view is the dominant cause of slow home loads.
-// The detail page fetches the full row (including photo) via fetchReptileById.
-const REPTILE_LIST_COLUMNS = 'id, name, species, category, logs(created_at)';
+// Home / quick-log lists. photo_thumbnail is a small (~240px) compressed
+// data-url; last_log_at is denormalized so we don't have to embed the logs
+// table just to render "5h ago". Together these cut the home payload from
+// ~hundreds of KB (full base64 photos + every log row) to a few KB.
+// The detail page fetches the full row (including the full photo) separately
+// via fetchReptileById.
+const REPTILE_LIST_COLUMNS_FAST   = 'id, name, species, category, photo_thumbnail, last_log_at';
+// Pre-migration fallback: same data, but without the new columns. Uses the
+// embedded logs join so getLastLogDate still works.
+const REPTILE_LIST_COLUMNS_LEGACY = 'id, name, species, category, logs(created_at)';
+
+function isMissingColumnError(error) {
+  if (!error) return false;
+  // 42703 = undefined_column from Postgres directly.
+  // PGRST204 = PostgREST schema-cache miss after a missing column.
+  return error.code === '42703' || error.code === 'PGRST204';
+}
+
+// Runs the same query first against the fast column list, then falls back to
+// the legacy list if the fast columns don't exist yet. Lets the app deploy
+// before supabase/add-home-fast-columns.sql is run — just slower until then.
+async function selectReptilesWithFallback(buildQuery) {
+  const fast = await buildQuery(REPTILE_LIST_COLUMNS_FAST);
+  if (!fast.error) return fast.data;
+  if (!isMissingColumnError(fast.error)) throw fast.error;
+  console.warn('reptiles.photo_thumbnail / last_log_at missing — falling back to slower legacy query. Run supabase/add-home-fast-columns.sql to fix.');
+  const slow = await buildQuery(REPTILE_LIST_COLUMNS_LEGACY);
+  if (slow.error) throw slow.error;
+  return slow.data;
+}
 
 export async function fetchReptiles() {
   const userId = await getUserId();
-
-  const { data, error } = await supabase
-    .from('reptiles')
-    .select(REPTILE_LIST_COLUMNS)
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false });
-
-  if (error) throw error;
-  return data;
+  return selectReptilesWithFallback((cols) =>
+    supabase
+      .from('reptiles')
+      .select(cols)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+  );
 }
 
 export async function fetchSharedReptiles() {
@@ -104,13 +127,11 @@ export async function fetchSharedReptiles() {
   if (error) throw error;
   if (shares.length === 0) return [];
 
-  // Step 2: fetch the reptiles with their logs
+  // Step 2: fetch the reptiles (same fast/legacy fallback)
   const reptileIds = [...new Set(shares.map((s) => s.reptile_id))];
-  const { data: reptiles, error: rErr } = await supabase
-    .from('reptiles')
-    .select(REPTILE_LIST_COLUMNS)
-    .in('id', reptileIds);
-  if (rErr) throw rErr;
+  const reptiles = await selectReptilesWithFallback((cols) =>
+    supabase.from('reptiles').select(cols).in('id', reptileIds)
+  );
   const reptileMap = {};
   for (const r of reptiles) reptileMap[r.id] = r;
 
@@ -137,7 +158,7 @@ export async function fetchReptileById(id) {
   return data;
 }
 
-export async function createReptile({ name, species, dob, photo, category }) {
+export async function createReptile({ name, species, dob, photo, photo_thumbnail, category }) {
   const userId = await getUserId();
   const row = {
     user_id: userId,
@@ -146,22 +167,31 @@ export async function createReptile({ name, species, dob, photo, category }) {
     dob: dob || null,
     photo: photo || null,
   };
+  if (photo_thumbnail) row.photo_thumbnail = photo_thumbnail;
   // Only include category if the caller supplied one. Avoids tripping any
   // leftover CHECK constraint from the pre-simplification schema (which only
   // permitted the old plural values like 'snakes', 'geckos', 'other', etc.).
   if (category) row.category = category;
 
-  let { data, error } = await supabase.from('reptiles').insert(row).select().single();
-
-  // Fallback: if the category column has a CHECK constraint that rejects the
-  // new singular values (23514 = check_violation), retry without category so
-  // the reptile still saves. The user can correct it from the edit screen.
-  if (error && error.code === '23514' && 'category' in row) {
-    console.warn('reptiles.category rejected by CHECK constraint; retrying without category. Run supabase/relax-reptile-category.sql to fix permanently.');
-    const { category: _omit, ...without } = row;
-    ({ data, error } = await supabase.from('reptiles').insert(without).select().single());
+  async function tryInsert(r) {
+    const res = await supabase.from('reptiles').insert(r).select().single();
+    if (!res.error) return res;
+    // category constraint fallback (legacy schema)
+    if (res.error.code === '23514' && 'category' in r) {
+      console.warn('reptiles.category rejected by CHECK constraint; retrying without category. Run supabase/relax-reptile-category.sql to fix permanently.');
+      const { category: _omit, ...without } = r;
+      return tryInsert(without);
+    }
+    // photo_thumbnail column missing — strip and retry (works pre-migration)
+    if (isMissingColumnError(res.error) && 'photo_thumbnail' in r) {
+      console.warn('reptiles.photo_thumbnail missing — saving without it. Run supabase/add-home-fast-columns.sql to enable thumbnail support.');
+      const { photo_thumbnail: _omit, ...without } = r;
+      return tryInsert(without);
+    }
+    return res;
   }
 
+  const { data, error } = await tryInsert(row);
   if (error) {
     console.error('createReptile insert failed:', error);
     throw error;
@@ -178,26 +208,33 @@ export async function updateReptileById(id, updates) {
   };
   if (updates.category !== undefined) updateObj.category = updates.category;
   if (updates.dual_sides !== undefined) updateObj.dual_sides = updates.dual_sides;
+  if (updates.photo_thumbnail !== undefined) updateObj.photo_thumbnail = updates.photo_thumbnail;
 
-  // If the dual_sides column doesn't exist yet, throw a clear error pointing
-  // at the SQL to run. (Previously this was silently stripped, which meant
-  // the toggle "saved" successfully but the value never persisted.)
-  function isMissingColumn(error, column) {
+  function isSpecificMissingColumn(error, column) {
     if (!error) return false;
     if (error.code === '42703' && new RegExp(`column "?${column}"? of relation "reptiles" does not exist`, 'i').test(error.message || '')) return true;
-    // PostgREST schema-cache miss
     if (error.code === 'PGRST204' && new RegExp(`'${column}' column`, 'i').test(error.message || '')) return true;
     return false;
   }
 
-  const { data, error } = await supabase
-    .from('reptiles')
-    .update(updateObj)
-    .eq('id', id)
-    .select()
-    .single();
+  // photo_thumbnail is degrade-gracefully: strip and retry silently if the
+  // column hasn't been added yet. dual_sides is the opposite — throw a clear
+  // error if missing, since the user explicitly toggled it and the value
+  // would otherwise vanish without explanation.
+  async function tryUpdate(row) {
+    const res = await supabase.from('reptiles').update(row).eq('id', id).select().single();
+    if (!res.error) return res;
+    if (isSpecificMissingColumn(res.error, 'photo_thumbnail') && 'photo_thumbnail' in row) {
+      console.warn('reptiles.photo_thumbnail missing — saving without it. Run supabase/add-home-fast-columns.sql to enable thumbnails.');
+      const { photo_thumbnail: _omit, ...rest } = row;
+      return tryUpdate(rest);
+    }
+    return res;
+  }
 
-  if (error && isMissingColumn(error, 'dual_sides') && 'dual_sides' in updateObj) {
+  const { data, error } = await tryUpdate(updateObj);
+
+  if (error && isSpecificMissingColumn(error, 'dual_sides') && 'dual_sides' in updateObj) {
     throw new Error(
       "The 'dual_sides' column is missing from the reptiles table. Run this SQL in the Supabase SQL Editor: " +
       "ALTER TABLE reptiles ADD COLUMN IF NOT EXISTS dual_sides boolean DEFAULT false;"
@@ -205,6 +242,20 @@ export async function updateReptileById(id, updates) {
   }
   if (error) throw error;
   return data;
+}
+
+// Best-effort thumbnail backfill, used by the detail page when it loads a
+// reptile that has a full photo but no thumbnail yet. Silently no-ops if the
+// column doesn't exist or the user lacks write permission (e.g. shared-with).
+export async function saveReptileThumbnail(id, photo_thumbnail) {
+  if (!photo_thumbnail) return;
+  const { error } = await supabase
+    .from('reptiles')
+    .update({ photo_thumbnail })
+    .eq('id', id);
+  if (error && !isMissingColumnError(error)) {
+    console.warn('Failed to backfill reptiles.photo_thumbnail:', error);
+  }
 }
 
 export async function deleteReptileById(id) {
@@ -278,6 +329,20 @@ export async function createLog(reptileId, log) {
 
   const { data, error } = await tryInsert(fullRow);
   if (error) throw error;
+
+  // Keep reptiles.last_log_at fresh so the home page doesn't have to embed
+  // the logs table to render "5h ago". Best-effort: don't fail the log save
+  // if the column doesn't exist yet (pre-migration) or the update is rejected
+  // by RLS for shared-but-read-only edge cases.
+  supabase
+    .from('reptiles')
+    .update({ last_log_at: data.created_at })
+    .eq('id', reptileId)
+    .then(({ error: upErr }) => {
+      if (upErr && !isMissingColumnError(upErr)) {
+        console.warn('Failed to update reptiles.last_log_at:', upErr);
+      }
+    });
 
   const profileMap = await fetchProfilesByIds([userId]);
   return { ...data, profile: profileMap[userId] || null };
@@ -368,15 +433,18 @@ export async function fetchPendingInvites() {
   if (error) throw error;
   if (invites.length === 0) return [];
 
-  // Fetch reptile names
+  // Fetch reptile names (use thumbnail, not full photo, with a legacy fallback)
   const reptileIds = [...new Set(invites.map((i) => i.reptile_id))];
-  const { data: reptiles, error: rErr } = await supabase
-    .from('reptiles')
-    .select('id, name, photo')
-    .in('id', reptileIds);
-  if (rErr) throw rErr;
+  const inviteCardCols = await (async () => {
+    const fast = await supabase.from('reptiles').select('id, name, photo_thumbnail').in('id', reptileIds);
+    if (!fast.error) return fast.data;
+    if (!isMissingColumnError(fast.error)) throw fast.error;
+    const slow = await supabase.from('reptiles').select('id, name, photo').in('id', reptileIds);
+    if (slow.error) throw slow.error;
+    return slow.data;
+  })();
   const reptileMap = {};
-  for (const r of reptiles) reptileMap[r.id] = r;
+  for (const r of inviteCardCols) reptileMap[r.id] = r;
 
   // Fetch owner profiles
   const ownerIds = [...new Set(invites.map((i) => i.owner_id))];

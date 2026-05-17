@@ -103,6 +103,9 @@ export function timeAgo(dateStr) {
 }
 
 export function getLastLogDate(reptile) {
+  // Fast path: home query now returns last_log_at denormalized on the row.
+  if (reptile.last_log_at) return reptile.last_log_at;
+  // Legacy fallback: pre-migration the row carries an embedded logs array.
   const logs = reptile.logs || [];
   if (logs.length === 0) return null;
   return logs.reduce((latest, log) => {

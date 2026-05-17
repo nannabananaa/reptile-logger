@@ -7,6 +7,7 @@ import {
   fetchReptileById, fetchLogs, updateReptileById,
   deleteReptileById, createLog, deleteLogById,
   lookupProfileByEmail, shareReptile, fetchSharesForReptile, removeShare,
+  saveReptileThumbnail,
 } from '../utils/db';
 import { useAuth } from '../contexts/AuthContext';
 import { getVitamins, saveVitamins, calculateAge, displayTemp, displayWeight, tempUnitLabel, weightUnitLabel } from '../utils/storage';
@@ -18,7 +19,7 @@ const CHART_COLORS = {
   weight: '#a67c52',
 };
 
-function compressPhoto(dataUrl, maxWidth = 600) {
+function compressPhoto(dataUrl, maxWidth = 600, quality = 0.7) {
   return new Promise((resolve) => {
     if (!dataUrl) { resolve(null); return; }
     const img = new Image();
@@ -29,7 +30,7 @@ function compressPhoto(dataUrl, maxWidth = 600) {
       canvas.height = img.height * scale;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL('image/jpeg', 0.7));
+      resolve(canvas.toDataURL('image/jpeg', quality));
     };
     img.onerror = () => resolve(dataUrl);
     img.src = dataUrl;
@@ -75,6 +76,16 @@ export default function ReptileDetail() {
       ]);
       setReptile(reptileData);
       setLogs(logsData);
+
+      // Self-heal legacy reptiles: if there's a full photo but no thumbnail
+      // (because this reptile was created before thumbnails existed),
+      // generate one client-side and persist it so the home grid renders
+      // its photo on the next visit. Fire-and-forget — never blocks the UI.
+      if (reptileData?.photo && !reptileData.photo_thumbnail) {
+        compressPhoto(reptileData.photo, 240, 0.6)
+          .then((thumb) => saveReptileThumbnail(id, thumb))
+          .catch((err) => console.warn('Thumbnail backfill failed:', err));
+      }
     } catch (err) {
       console.error('Failed to load reptile:', err);
       setReptile(null);
@@ -1151,16 +1162,31 @@ function EditReptileModal({ reptile, onClose, onSave }) {
 
     try {
       // Only run compression on freshly-uploaded photos; the existing photo
-      // was already compressed when it was first saved.
-      const photoToSave = photoChanged && photo ? await compressPhoto(photo) : photo;
-      await updateReptileById(reptile.id, {
+      // was already compressed when it was first saved. When the photo
+      // changed we also regenerate the home-grid thumbnail.
+      const updates = {
         name: name.trim(),
         species: species.trim(),
         dob: dob || null,
-        photo: photoToSave,
+        photo,
         category,
         dual_sides: dualSides,
-      });
+      };
+      if (photoChanged) {
+        if (photo) {
+          const [compressed, thumbnail] = await Promise.all([
+            compressPhoto(photo, 600, 0.7),
+            compressPhoto(photo, 240, 0.6),
+          ]);
+          updates.photo = compressed;
+          updates.photo_thumbnail = thumbnail;
+        } else {
+          // Photo was cleared — also clear the thumbnail.
+          updates.photo = null;
+          updates.photo_thumbnail = null;
+        }
+      }
+      await updateReptileById(reptile.id, updates);
       onSave();
     } catch (err) {
       console.error('Failed to update reptile:', err);
