@@ -179,29 +179,30 @@ export async function updateReptileById(id, updates) {
   if (updates.category !== undefined) updateObj.category = updates.category;
   if (updates.dual_sides !== undefined) updateObj.dual_sides = updates.dual_sides;
 
-  // Auto-retry without any column the DB doesn't have yet (42703). Lets the
-  // "Track Both Sides" toggle save name/photo/etc. cleanly before the user
-  // runs supabase/add-feature-batch.sql, instead of failing the whole update.
-  async function tryUpdate(row) {
-    const { data, error } = await supabase
-      .from('reptiles')
-      .update(row)
-      .eq('id', id)
-      .select()
-      .single();
-    if (!error) return { data };
-    if (error.code !== '42703') return { error };
-    const match = /column "?([a-z_]+)"? of relation "reptiles" does not exist/i.exec(error.message || '');
-    const missing = match?.[1];
-    if (missing && missing in row) {
-      console.warn(`reptiles.${missing} column missing — retrying without it. Run supabase/add-feature-batch.sql to add it.`);
-      const { [missing]: _omit, ...rest } = row;
-      return tryUpdate(rest);
-    }
-    return { error };
+  // If the dual_sides column doesn't exist yet, throw a clear error pointing
+  // at the SQL to run. (Previously this was silently stripped, which meant
+  // the toggle "saved" successfully but the value never persisted.)
+  function isMissingColumn(error, column) {
+    if (!error) return false;
+    if (error.code === '42703' && new RegExp(`column "?${column}"? of relation "reptiles" does not exist`, 'i').test(error.message || '')) return true;
+    // PostgREST schema-cache miss
+    if (error.code === 'PGRST204' && new RegExp(`'${column}' column`, 'i').test(error.message || '')) return true;
+    return false;
   }
 
-  const { data, error } = await tryUpdate(updateObj);
+  const { data, error } = await supabase
+    .from('reptiles')
+    .update(updateObj)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error && isMissingColumn(error, 'dual_sides') && 'dual_sides' in updateObj) {
+    throw new Error(
+      "The 'dual_sides' column is missing from the reptiles table. Run this SQL in the Supabase SQL Editor: " +
+      "ALTER TABLE reptiles ADD COLUMN IF NOT EXISTS dual_sides boolean DEFAULT false;"
+    );
+  }
   if (error) throw error;
   return data;
 }
@@ -247,11 +248,14 @@ export async function createLog(reptileId, log) {
     fed: log.fed,
     vitamins: log.vitamins,
     notes: log.notes,
-    vet_notes: log.vet_notes,
-    enclosure_cleaned_date: log.enclosure_cleaned_date,
   };
-  const cf = log.category_fields;
-  const hasCategoryFields = cf && Object.keys(cf).length > 0;
+  // vet_notes and enclosure_cleaned_date live inside category_fields rather
+  // than as dedicated columns — keeps logs writeable without running any
+  // schema migration on the logs table.
+  const cf = { ...(log.category_fields || {}) };
+  if (log.vet_notes) cf.vet_notes = log.vet_notes;
+  if (log.enclosure_cleaned_date) cf.enclosure_cleaned_date = log.enclosure_cleaned_date;
+  const hasCategoryFields = Object.keys(cf).length > 0;
   const fullRow = hasCategoryFields ? { ...baseRow, category_fields: cf } : baseRow;
 
   // Tries the insert. On a 42703 (undefined column) error from any of the

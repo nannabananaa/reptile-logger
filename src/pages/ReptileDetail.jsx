@@ -478,18 +478,26 @@ function LogCard({ log, category, onDelete, isOwner }) {
   const coolTemp = cf.cool_temp ?? log.cool_temp;
   const warmHumidity = cf.warm_humidity ?? log.warm_humidity;
   const coolHumidity = cf.cool_humidity ?? log.cool_humidity;
-  // Don't render the dual-side json keys in the generic category section.
-  const DUAL_KEYS = new Set(['warm_temp', 'cool_temp', 'warm_humidity', 'cool_humidity', 'photo']);
+  // Don't render reserved json keys in the generic category section — they
+  // have their own rendering above.
+  const RESERVED_KEYS = new Set([
+    'warm_temp', 'cool_temp', 'warm_humidity', 'cool_humidity', 'photo',
+    'vet_notes', 'enclosure_cleaned_date',
+  ]);
   const hasCategoryData = categoryFieldDefs.some((f) => {
-    if (DUAL_KEYS.has(f.key)) return false;
+    if (RESERVED_KEYS.has(f.key)) return false;
     const val = cf[f.key];
     return val != null && val !== '' && val !== false;
   });
   const hasDualTemp = warmTemp != null || coolTemp != null;
   const hasDualHumidity = warmHumidity != null || coolHumidity != null;
   const photo = cf.photo;
-  const cleanedDate = log.enclosure_cleaned_date
-    ? new Date(log.enclosure_cleaned_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  // vet_notes & enclosure_cleaned_date now live in category_fields. Fall
+  // back to the legacy top-level columns for rows written by older builds.
+  const vetNotes = cf.vet_notes ?? log.vet_notes;
+  const cleanedDateRaw = cf.enclosure_cleaned_date ?? log.enclosure_cleaned_date;
+  const cleanedDate = cleanedDateRaw
+    ? new Date(cleanedDateRaw + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : null;
 
   function formatFieldValue(field, value) {
@@ -604,10 +612,10 @@ function LogCard({ log, category, onDelete, isOwner }) {
         </div>
       )}
       {log.notes && <p className="log-card-notes">{log.notes}</p>}
-      {log.vet_notes && (
+      {vetNotes && (
         <div className="log-card-vet">
           <span className="log-card-vet-label">🩺 Vet / Medical</span>
-          <p className="log-card-notes">{log.vet_notes}</p>
+          <p className="log-card-notes">{vetNotes}</p>
         </div>
       )}
     </div>
