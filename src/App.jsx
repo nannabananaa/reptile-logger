@@ -2,10 +2,13 @@ import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import Spinner from './components/Spinner';
+// Layout is on every protected route and tiny — eager-loading saves an extra
+// chunk fetch on the first authenticated nav. The pages themselves are still
+// code-split below.
+import Layout from './components/Layout';
 
 // Code-split every page. The initial bundle becomes auth + router + AuthContext;
 // charts (recharts), settings, detail views etc. load on demand.
-const Layout = lazy(() => import('./components/Layout'));
 const HomePage = lazy(() => import('./pages/HomePage'));
 const AddReptile = lazy(() => import('./pages/AddReptile'));
 const ReptileDetail = lazy(() => import('./pages/ReptileDetail'));

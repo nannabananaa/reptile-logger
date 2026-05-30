@@ -72,16 +72,20 @@ export async function updateProfile({ display_name }) {
 
 /* ── Reptiles ── */
 
-// Home / quick-log lists. photo_thumbnail is a small (~240px) compressed
+// Home / quick-log lists. photo_thumbnail is a small (~200px) compressed
 // data-url; last_log_at is denormalized so we don't have to embed the logs
 // table just to render "5h ago". Together these cut the home payload from
 // ~hundreds of KB (full base64 photos + every log row) to a few KB.
 // The detail page fetches the full row (including the full photo) separately
 // via fetchReptileById.
 const REPTILE_LIST_COLUMNS_FAST   = 'id, name, species, category, photo_thumbnail, last_log_at';
-// Pre-migration fallback: same data, but without the new columns. Uses the
-// embedded logs join so getLastLogDate still works.
-const REPTILE_LIST_COLUMNS_LEGACY = 'id, name, species, category, logs(created_at)';
+// Pre-migration fallback: same minimal column set, but without the new
+// columns. We intentionally do NOT embed logs here — joining the entire logs
+// table just to render "5h ago" was the biggest source of slowness when the
+// migration hasn't been run yet. The home grid will just show "No logs yet"
+// until the user runs supabase/run-all-migrations.sql; a small price for a
+// fast home page on legacy schemas.
+const REPTILE_LIST_COLUMNS_LEGACY = 'id, name, species, category';
 
 function isMissingColumnError(error) {
   if (!error) return false;
@@ -147,15 +151,28 @@ export async function fetchSharedReptiles() {
   }));
 }
 
+// Detail-page query. Explicitly lists columns instead of '*' so a future
+// migration that adds a heavy column (e.g. another big jsonb / blob) doesn't
+// silently inflate every detail-page load. photo_thumbnail is excluded — the
+// detail page only renders the full photo.
+const REPTILE_DETAIL_COLUMNS_FAST   = 'id, user_id, name, species, dob, photo, category, dual_sides';
+const REPTILE_DETAIL_COLUMNS_LEGACY = 'id, user_id, name, species, dob, photo, category';
+
 export async function fetchReptileById(id) {
-  const { data, error } = await supabase
+  const fast = await supabase
     .from('reptiles')
-    .select('*')
+    .select(REPTILE_DETAIL_COLUMNS_FAST)
     .eq('id', id)
     .single();
-
-  if (error) throw error;
-  return data;
+  if (!fast.error) return fast.data;
+  if (!isMissingColumnError(fast.error)) throw fast.error;
+  const slow = await supabase
+    .from('reptiles')
+    .select(REPTILE_DETAIL_COLUMNS_LEGACY)
+    .eq('id', id)
+    .single();
+  if (slow.error) throw slow.error;
+  return slow.data;
 }
 
 export async function createReptile({ name, species, dob, photo, photo_thumbnail, category }) {
@@ -217,30 +234,35 @@ export async function updateReptileById(id, updates) {
     return false;
   }
 
-  // photo_thumbnail is degrade-gracefully: strip and retry silently if the
-  // column hasn't been added yet. dual_sides is the opposite — throw a clear
-  // error if missing, since the user explicitly toggled it and the value
-  // would otherwise vanish without explanation.
+  // Both photo_thumbnail and dual_sides degrade gracefully: strip the missing
+  // column and retry so the rest of the edit (name, photo, dob, ...) still
+  // saves. A console warning surfaces the missing column for diagnostics, and
+  // a flag is returned so the caller can surface a one-time hint in the UI.
+  let strippedDualSides = false;
   async function tryUpdate(row) {
     const res = await supabase.from('reptiles').update(row).eq('id', id).select().single();
     if (!res.error) return res;
     if (isSpecificMissingColumn(res.error, 'photo_thumbnail') && 'photo_thumbnail' in row) {
-      console.warn('reptiles.photo_thumbnail missing — saving without it. Run supabase/add-home-fast-columns.sql to enable thumbnails.');
+      console.warn('reptiles.photo_thumbnail missing — saving without it. Run supabase/run-all-migrations.sql to enable thumbnails.');
       const { photo_thumbnail: _omit, ...rest } = row;
+      return tryUpdate(rest);
+    }
+    if (isSpecificMissingColumn(res.error, 'dual_sides') && 'dual_sides' in row) {
+      console.warn('reptiles.dual_sides missing — saving without it. Run supabase/run-all-migrations.sql to enable dual-side tracking.');
+      strippedDualSides = true;
+      const { dual_sides: _omit, ...rest } = row;
       return tryUpdate(rest);
     }
     return res;
   }
 
   const { data, error } = await tryUpdate(updateObj);
-
-  if (error && isSpecificMissingColumn(error, 'dual_sides') && 'dual_sides' in updateObj) {
-    throw new Error(
-      "The 'dual_sides' column is missing from the reptiles table. Run this SQL in the Supabase SQL Editor: " +
-      "ALTER TABLE reptiles ADD COLUMN IF NOT EXISTS dual_sides boolean DEFAULT false;"
-    );
-  }
   if (error) throw error;
+  if (strippedDualSides) {
+    // Attach a non-fatal hint to the returned row so the UI can show a
+    // small notice. The save itself succeeded — don't throw.
+    data._missingColumnHint = 'dual_sides';
+  }
   return data;
 }
 
@@ -286,12 +308,20 @@ export async function deleteReptileById(id) {
 
 /* ── Logs ── */
 
+// Soft cap on how many logs we ever pull into the detail page at once. With
+// per-log photos potentially riding inside category_fields, an unbounded
+// fetch on a reptile with hundreds of logs could pull megabytes. 500 is
+// enough for years of weekly logging; if a user ever exceeds this we can
+// add proper pagination.
+const LOG_FETCH_LIMIT = 500;
+
 export async function fetchLogs(reptileId) {
   const { data: logs, error } = await supabase
     .from('logs')
     .select('*')
     .eq('reptile_id', reptileId)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(LOG_FETCH_LIMIT);
 
   if (error) throw error;
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, memo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -163,6 +163,10 @@ export default function ReptileDetail() {
     }
   }
 
+  // Stable callback passed to memoized LogCard so the cards don't re-render
+  // every time some unrelated state on the detail page changes.
+  const handleAskDeleteLog = useCallback((logId) => setDeleteLogId(logId), []);
+
   async function handleDeleteLog(logId) {
     try {
       await deleteLogById(logId);
@@ -178,7 +182,7 @@ export default function ReptileDetail() {
       {/* Hero */}
       <div className="detail-hero">
         {reptile.photo ? (
-          <img src={reptile.photo} alt={reptile.name} className="detail-hero-img" />
+          <img src={reptile.photo} alt={reptile.name} className="detail-hero-img" decoding="async" />
         ) : (
           <div className="detail-hero-placeholder">🦎</div>
         )}
@@ -277,7 +281,7 @@ export default function ReptileDetail() {
           ) : (
             <div className="log-list">
               {filteredLogs.map((log) => (
-                <LogCard key={log.id} log={log} category={category} onDelete={() => setDeleteLogId(log.id)} isOwner={isOwner} />
+                <LogCard key={log.id} log={log} category={category} onDelete={handleAskDeleteLog} isOwner={isOwner} />
               ))}
             </div>
           )}
@@ -399,7 +403,10 @@ function FilterChips({ filter, setFilter, customStart, setCustomStart, customEnd
 }
 
 /* ── Chart Card ── */
-function ChartCard({ title, dataKey, color, data, unit, convertFn }) {
+// Memoized so toggling the new-log modal / opening menus doesn't force
+// recharts to recompute and re-render its SVG. Recharts is the heaviest
+// thing on the detail page, so skipping these re-renders is a win.
+const ChartCard = memo(function ChartCard({ title, dataKey, color, data, unit, convertFn }) {
   const filtered = data.filter((d) => d[dataKey] != null).map((d) => convertFn ? { ...d, [dataKey]: convertFn(d[dataKey]) } : d);
   if (filtered.length < 2) {
     return (
@@ -454,10 +461,13 @@ function ChartCard({ title, dataKey, color, data, unit, convertFn }) {
       </div>
     </div>
   );
-}
+});
 
 /* ── Log Card ── */
-function LogCard({ log, category, onDelete, isOwner }) {
+// Memoized so opening/closing the delete-log confirm or new-log modal doesn't
+// re-render every log card. With log photos rendered inline, a parent-side
+// re-render was paying for an unnecessary image redraw on every card.
+const LogCard = memo(function LogCard({ log, category, onDelete, isOwner }) {
   const date = new Date(log.created_at);
   const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
@@ -507,14 +517,14 @@ function LogCard({ log, category, onDelete, isOwner }) {
           <span className="log-date-time">{timeStr}</span>
           {loggedBy && <span className="log-logged-by">Logged by {loggedBy}</span>}
         </div>
-        <button className="icon-btn icon-btn-sm icon-btn-danger" onClick={onDelete} aria-label="Delete log">
+        <button className="icon-btn icon-btn-sm icon-btn-danger" onClick={() => onDelete(log.id)} aria-label="Delete log">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
           </svg>
         </button>
       </div>
       {photo && (
-        <img src={photo} alt="Log photo" className="log-card-photo" />
+        <img src={photo} alt="Log photo" className="log-card-photo" loading="lazy" />
       )}
       <div className="log-card-stats">
         {hasDualTemp ? (
@@ -612,7 +622,7 @@ function LogCard({ log, category, onDelete, isOwner }) {
       )}
     </div>
   );
-}
+});
 
 /* ── Share Modal ── */
 function ShareModal({ reptileId, onClose }) {

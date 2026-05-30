@@ -43,9 +43,12 @@ export default function HomePage() {
     }
   }, []);
 
+  // Refetch on every navigation TO the home page (e.g. returning from /add or
+  // /reptile/:id). Using location.key avoids refetching when the same location
+  // object identity is unstable across unrelated re-renders.
   useEffect(() => {
     loadData();
-  }, [loadData, location]);
+  }, [loadData, location.key]);
 
   // Legacy thumbnail backfill: for any owned reptiles that have a full photo
   // but no photo_thumbnail (created before the thumbnail column existed),
