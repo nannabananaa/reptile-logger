@@ -59,8 +59,11 @@ export default function HomePage() {
   useEffect(() => {
     if (loading || reptiles.length === 0) return;
 
+    // Only worth re-fetching when the row has no thumbnail AND we don't
+    // already have the full photo from the legacy fallback (which selects
+    // reptiles.photo directly when photo_thumbnail isn't in the schema yet).
     const candidateIds = reptiles
-      .filter((r) => !r.photo_thumbnail && !backfilledRef.current.has(r.id))
+      .filter((r) => !r.photo_thumbnail && !r.photo && !backfilledRef.current.has(r.id))
       .map((r) => r.id);
     if (candidateIds.length === 0) return;
 
@@ -260,11 +263,14 @@ const ReptileCard = memo(function ReptileCard({
   reptile, menuOpen, onOpenMenu, onEdit, onAskDelete, onCloseMenu,
 }) {
   const lastLog = getLastLogDate(reptile);
+  // Pre-migration fallback: render the full reptile.photo if the cheap
+  // thumbnail column isn't populated yet (or doesn't exist in the schema).
+  const cardImg = reptile.photo_thumbnail || reptile.photo;
   return (
     <div className="reptile-card-wrap">
       <Link to={`/reptile/${reptile.id}`} className="reptile-card">
-        {reptile.photo_thumbnail ? (
-          <img src={reptile.photo_thumbnail} alt={reptile.name} className="reptile-card-img" loading="lazy" />
+        {cardImg ? (
+          <img src={cardImg} alt={reptile.name} className="reptile-card-img" loading="lazy" />
         ) : (
           <div className="reptile-card-placeholder">🦎</div>
         )}
@@ -307,11 +313,12 @@ const SharedReptileCard = memo(function SharedReptileCard({ share }) {
   const reptile = share.reptile;
   if (!reptile) return null;
   const lastLog = getLastLogDate(reptile);
+  const cardImg = reptile.photo_thumbnail || reptile.photo;
   return (
     <div className="reptile-card-wrap">
       <Link to={`/reptile/${reptile.id}`} className="reptile-card">
-        {reptile.photo_thumbnail ? (
-          <img src={reptile.photo_thumbnail} alt={reptile.name} className="reptile-card-img" loading="lazy" />
+        {cardImg ? (
+          <img src={cardImg} alt={reptile.name} className="reptile-card-img" loading="lazy" />
         ) : (
           <div className="reptile-card-placeholder">🦎</div>
         )}
@@ -357,10 +364,12 @@ function QuickLogModal({ reptiles, sharedReptiles, onPick, onClose }) {
         <div className="modal-body">
           <p className="quick-log-hint">Pick a reptile to log for:</p>
           <div className="quick-log-list">
-            {all.map((r) => (
+            {all.map((r) => {
+              const img = r.photo_thumbnail || r.photo;
+              return (
               <button key={r.id} className="quick-log-item" onClick={() => onPick(r.id)}>
-                {r.photo_thumbnail ? (
-                  <img src={r.photo_thumbnail} alt={r.name} className="quick-log-placeholder" style={{ objectFit: 'cover', padding: 0 }} />
+                {img ? (
+                  <img src={img} alt={r.name} className="quick-log-placeholder" style={{ objectFit: 'cover', padding: 0 }} />
                 ) : (
                   <div className="quick-log-placeholder">🦎</div>
                 )}
@@ -371,7 +380,8 @@ function QuickLogModal({ reptiles, sharedReptiles, onPick, onClose }) {
                   {r._from && <span className="quick-log-shared">Shared by {r._from}</span>}
                 </div>
               </button>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

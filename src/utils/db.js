@@ -79,13 +79,13 @@ export async function updateProfile({ display_name }) {
 // The detail page fetches the full row (including the full photo) separately
 // via fetchReptileById.
 const REPTILE_LIST_COLUMNS_FAST   = 'id, name, species, category, photo_thumbnail, last_log_at';
-// Pre-migration fallback: same minimal column set, but without the new
-// columns. We intentionally do NOT embed logs here — joining the entire logs
-// table just to render "5h ago" was the biggest source of slowness when the
-// migration hasn't been run yet. The home grid will just show "No logs yet"
-// until the user runs supabase/run-all-migrations.sql; a small price for a
-// fast home page on legacy schemas.
-const REPTILE_LIST_COLUMNS_LEGACY = 'id, name, species, category';
+// Pre-migration fallback: the new columns don't exist yet, so we read the
+// full reptiles.photo column directly (the UI falls back to .photo when
+// .photo_thumbnail is null) and embed logs(created_at) so getLastLogDate
+// can still compute "5h ago". This is slower than the fast path — every
+// home load pulls full base64 photos + every log timestamp — but it keeps
+// the app fully usable without running supabase/run-all-migrations.sql.
+const REPTILE_LIST_COLUMNS_LEGACY = 'id, name, species, category, photo, logs(created_at)';
 
 function isMissingColumnError(error) {
   if (!error) return false;
