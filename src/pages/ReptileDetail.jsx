@@ -97,6 +97,13 @@ export default function ReptileDetail() {
 
   useEffect(() => { reload(); }, [reload]);
 
+  // Stable callback passed to memoized LogCard so the cards don't re-render
+  // every time some unrelated state on the detail page changes. Defined here
+  // (not after the early returns) so it's called on every render — moving it
+  // below the `if (loading) return` block violates the Rules of Hooks and
+  // crashes the page to a blank screen on the second render.
+  const handleAskDeleteLog = useCallback((logId) => setDeleteLogId(logId), []);
+
   const filteredLogs = useMemo(() => {
     const sorted = [...logs].sort(
       (a, b) => new Date(b.created_at) - new Date(a.created_at)
@@ -179,10 +186,6 @@ export default function ReptileDetail() {
       console.error('Failed to delete reptile:', err);
     }
   }
-
-  // Stable callback passed to memoized LogCard so the cards don't re-render
-  // every time some unrelated state on the detail page changes.
-  const handleAskDeleteLog = useCallback((logId) => setDeleteLogId(logId), []);
 
   async function handleDeleteLog(logId) {
     try {
