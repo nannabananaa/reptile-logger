@@ -1,25 +1,21 @@
-import { useEffect, useState, useCallback, useMemo, memo } from 'react';
+import { useEffect, useState, useCallback, useMemo, memo, lazy, Suspense } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-} from 'recharts';
 import {
   fetchReptileById, fetchReptilePhotoById, fetchLogs, updateReptileById,
   deleteReptileById, createLog, deleteLogById,
   lookupProfileByEmail, shareReptile, fetchSharesForReptile, removeShare,
   saveReptileThumbnail,
 } from '../utils/db';
+
+// recharts is ~100 KB gzip — the heaviest dep in the app. Lazy-import the
+// charts panel so it only downloads when the user actually clicks the
+// Charts tab. The Logs tab (the default) loads with no recharts cost.
+const ChartsPanel = lazy(() => import('../components/ChartsPanel'));
 import { useAuth } from '../contexts/AuthContext';
 import { getVitamins, saveVitamins, calculateAge, displayTemp, displayWeight, tempUnitLabel, weightUnitLabel } from '../utils/storage';
 import { CATEGORIES, getCategoryFields, getCategoryLabel, getFieldIcon } from '../utils/categoryFields';
 import { compressPhoto, compressPhotoPair, PHOTO_THUMB_WIDTH, PHOTO_THUMB_QUALITY } from '../utils/photo';
 import Spinner from '../components/Spinner';
-
-const CHART_COLORS = {
-  temperature: '#c4a44a',
-  humidity: '#5b9a6b',
-  weight: '#a67c52',
-};
 
 export default function ReptileDetail() {
   const { id } = useParams();
@@ -337,11 +333,9 @@ export default function ReptileDetail() {
               </p>
             </div>
           ) : (
-            <>
-              <ChartCard title={`Temperature (${tempUnitLabel()})`} dataKey="temperature" color={CHART_COLORS.temperature} data={chartData} unit={tempUnitLabel()} convertFn={tempUnitLabel() === '°C' ? (v) => Math.round(((v - 32) * 5 / 9) * 10) / 10 : null} />
-              <ChartCard title="Humidity (%)" dataKey="humidity" color={CHART_COLORS.humidity} data={chartData} unit="%" />
-              <ChartCard title={`Weight (${weightUnitLabel()})`} dataKey="weight" color={CHART_COLORS.weight} data={chartData} unit={weightUnitLabel()} convertFn={weightUnitLabel() === 'oz' ? (v) => Math.round((v / 28.3495) * 100) / 100 : null} />
-            </>
+            <Suspense fallback={<div style={{ padding: '32px 0' }}><Spinner /></div>}>
+              <ChartsPanel data={chartData} />
+            </Suspense>
           )}
         </div>
       )}
@@ -431,67 +425,6 @@ function FilterChips({ filter, setFilter, customStart, setCustomStart, customEnd
     </>
   );
 }
-
-/* ── Chart Card ── */
-// Memoized so toggling the new-log modal / opening menus doesn't force
-// recharts to recompute and re-render its SVG. Recharts is the heaviest
-// thing on the detail page, so skipping these re-renders is a win.
-const ChartCard = memo(function ChartCard({ title, dataKey, color, data, unit, convertFn }) {
-  const filtered = data.filter((d) => d[dataKey] != null).map((d) => convertFn ? { ...d, [dataKey]: convertFn(d[dataKey]) } : d);
-  if (filtered.length < 2) {
-    return (
-      <div className="chart-card">
-        <h4 className="chart-title">{title}</h4>
-        <p className="chart-nodata">Not enough data</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="chart-card">
-      <h4 className="chart-title">{title}</h4>
-      <div className="chart-wrap">
-        <ResponsiveContainer width="100%" height={220}>
-          <LineChart data={filtered} margin={{ top: 8, right: 12, bottom: 0, left: -16 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-            <XAxis
-              dataKey="date"
-              tick={{ fill: '#a8a090', fontSize: 11 }}
-              tickLine={false}
-              axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
-              minTickGap={24}
-            />
-            <YAxis
-              tick={{ fill: '#a8a090', fontSize: 11 }}
-              tickLine={false}
-              axisLine={false}
-              width={45}
-            />
-            <Tooltip
-              contentStyle={{
-                background: '#1a2e1a',
-                border: '1px solid #2a4a2e',
-                borderRadius: 10,
-                fontSize: 13,
-                color: '#e8e4dc',
-              }}
-              formatter={(value) => [`${value}${unit}`, title.split(' ')[0]]}
-              labelStyle={{ color: '#a8a090' }}
-            />
-            <Line
-              type="monotone"
-              dataKey={dataKey}
-              stroke={color}
-              strokeWidth={2.5}
-              dot={{ fill: color, r: 4, strokeWidth: 0 }}
-              activeDot={{ r: 6, fill: color, stroke: '#121a12', strokeWidth: 2 }}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
-  );
-});
 
 /* ── Log Card ── */
 // Memoized so opening/closing the delete-log confirm or new-log modal doesn't
