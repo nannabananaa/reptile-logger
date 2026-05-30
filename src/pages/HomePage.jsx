@@ -1,8 +1,13 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, memo } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { fetchReptiles, fetchSharedReptiles, fetchPendingInvites, respondToInvite, deleteReptileById } from '../utils/db';
+import {
+  fetchReptiles, fetchSharedReptiles, fetchPendingInvites, respondToInvite,
+  deleteReptileById, fetchReptilePhotosByIds, saveReptileThumbnail,
+} from '../utils/db';
 import { getLastLogDate, timeAgo } from '../utils/storage';
 import { getCategoryLabel } from '../utils/categoryFields';
+import { compressPhoto, PHOTO_THUMB_WIDTH, PHOTO_THUMB_QUALITY } from '../utils/photo';
+import Spinner from '../components/Spinner';
 
 export default function HomePage() {
   const [reptiles, setReptiles] = useState([]);
@@ -15,6 +20,9 @@ export default function HomePage() {
   const [showQuickLog, setShowQuickLog] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  // Tracks reptile IDs we've already backfilled in this session so a refetch
+  // (after navigating back to home) doesn't kick off a duplicate backfill.
+  const backfilledRef = useRef(new Set());
 
   const loadData = useCallback(async () => {
     try {
@@ -39,7 +47,45 @@ export default function HomePage() {
     loadData();
   }, [loadData, location]);
 
-  async function handleDelete() {
+  // Legacy thumbnail backfill: for any owned reptiles that have a full photo
+  // but no photo_thumbnail (created before the thumbnail column existed),
+  // fetch the full photo once, compress it client-side, and persist the
+  // thumbnail. Future home loads will read the cheap column directly.
+  // Runs in the background — the home grid renders immediately with the
+  // 🦎 placeholder, then re-renders per-card as thumbnails come in.
+  useEffect(() => {
+    if (loading || reptiles.length === 0) return;
+
+    const candidateIds = reptiles
+      .filter((r) => !r.photo_thumbnail && !backfilledRef.current.has(r.id))
+      .map((r) => r.id);
+    if (candidateIds.length === 0) return;
+
+    candidateIds.forEach((id) => backfilledRef.current.add(id));
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await fetchReptilePhotosByIds(candidateIds);
+        if (cancelled) return;
+        for (const row of rows) {
+          if (cancelled) return;
+          const thumb = await compressPhoto(row.photo, PHOTO_THUMB_WIDTH, PHOTO_THUMB_QUALITY);
+          if (cancelled || !thumb) continue;
+          saveReptileThumbnail(row.id, thumb).catch(() => {});
+          setReptiles((prev) =>
+            prev.map((r) => (r.id === row.id ? { ...r, photo_thumbnail: thumb } : r))
+          );
+        }
+      } catch (err) {
+        console.warn('Thumbnail backfill failed:', err);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [reptiles, loading]);
+
+  const handleDelete = useCallback(async () => {
     try {
       await deleteReptileById(deleteId);
       setDeleteId(null);
@@ -48,24 +94,37 @@ export default function HomePage() {
     } catch (err) {
       console.error('Failed to delete reptile:', err);
     }
-  }
+  }, [deleteId, loadData]);
 
-  async function handleInviteResponse(shareId, accept) {
+  const handleInviteResponse = useCallback(async (shareId, accept) => {
     try {
       await respondToInvite(shareId, accept);
       await loadData();
     } catch (err) {
       console.error('Failed to respond to invite:', err);
     }
-  }
+  }, [loadData]);
+
+  const handleOpenMenu = useCallback((id) => {
+    setMenuId((prev) => (prev === id ? null : id));
+  }, []);
+
+  const handleEdit = useCallback((id) => {
+    setMenuId(null);
+    navigate(`/reptile/${id}?edit=1`);
+  }, [navigate]);
+
+  const handleAskDelete = useCallback((id) => {
+    setMenuId(null);
+    setDeleteId(id);
+  }, []);
+
+  const closeMenu = useCallback(() => setMenuId(null), []);
 
   if (loading) {
     return (
       <main className="page">
-        <div className="empty-state">
-          <div className="empty-state-icon">🦎</div>
-          <p className="empty-state-text">Loading...</p>
-        </div>
+        <Spinner />
       </main>
     );
   }
@@ -119,50 +178,17 @@ export default function HomePage() {
             <>
               {reptiles.length > 0 && (
                 <div className="reptile-grid">
-                  {reptiles.map((reptile) => {
-                    const lastLog = getLastLogDate(reptile);
-                    return (
-                      <div key={reptile.id} className="reptile-card-wrap">
-                        <Link to={`/reptile/${reptile.id}`} className="reptile-card">
-                          {reptile.photo_thumbnail ? (
-                            <img src={reptile.photo_thumbnail} alt={reptile.name} className="reptile-card-img" loading="lazy" />
-                          ) : (
-                            <div className="reptile-card-placeholder">🦎</div>
-                          )}
-                          <div className="reptile-card-info">
-                            <div className="reptile-card-name">{reptile.name}</div>
-                            {reptile.category && (
-                              <div className="reptile-card-category">{getCategoryLabel(reptile.category)}</div>
-                            )}
-                            {reptile.species && (
-                              <div className="reptile-card-species">{reptile.species}</div>
-                            )}
-                            <div className="reptile-card-lastlog">
-                              {lastLog ? timeAgo(lastLog) : 'No logs yet'}
-                            </div>
-                          </div>
-                        </Link>
-                        <button
-                          className="card-menu-btn"
-                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setMenuId(menuId === reptile.id ? null : reptile.id); }}
-                          aria-label="More options"
-                        >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                            <circle cx="12" cy="5" r="2" />
-                            <circle cx="12" cy="12" r="2" />
-                            <circle cx="12" cy="19" r="2" />
-                          </svg>
-                        </button>
-                        {menuId === reptile.id && (
-                          <CardMenu
-                            onEdit={() => { setMenuId(null); navigate(`/reptile/${reptile.id}?edit=1`); }}
-                            onDelete={() => { setMenuId(null); setDeleteId(reptile.id); }}
-                            onClose={() => setMenuId(null)}
-                          />
-                        )}
-                      </div>
-                    );
-                  })}
+                  {reptiles.map((reptile) => (
+                    <ReptileCard
+                      key={reptile.id}
+                      reptile={reptile}
+                      menuOpen={menuId === reptile.id}
+                      onOpenMenu={handleOpenMenu}
+                      onEdit={handleEdit}
+                      onAskDelete={handleAskDelete}
+                      onCloseMenu={closeMenu}
+                    />
+                  ))}
                 </div>
               )}
 
@@ -171,37 +197,9 @@ export default function HomePage() {
                 <>
                   <h3 className="section-title" style={{ marginTop: reptiles.length > 0 ? 24 : 0 }}>Shared with you</h3>
                   <div className="reptile-grid">
-                    {sharedReptiles.map((share) => {
-                      const reptile = share.reptile;
-                      if (!reptile) return null;
-                      const lastLog = getLastLogDate(reptile);
-                      return (
-                        <div key={share.id} className="reptile-card-wrap">
-                          <Link to={`/reptile/${reptile.id}`} className="reptile-card">
-                            {reptile.photo_thumbnail ? (
-                              <img src={reptile.photo_thumbnail} alt={reptile.name} className="reptile-card-img" loading="lazy" />
-                            ) : (
-                              <div className="reptile-card-placeholder">🦎</div>
-                            )}
-                            <div className="reptile-card-info">
-                              <div className="reptile-card-name">{reptile.name}</div>
-                              {reptile.category && (
-                                <div className="reptile-card-category">{getCategoryLabel(reptile.category)}</div>
-                              )}
-                              {reptile.species && (
-                                <div className="reptile-card-species">{reptile.species}</div>
-                              )}
-                              <div className="shared-badge">
-                                Shared by {share.owner?.display_name || 'Unknown'}
-                              </div>
-                              <div className="reptile-card-lastlog">
-                                {lastLog ? timeAgo(lastLog) : 'No logs yet'}
-                              </div>
-                            </div>
-                          </Link>
-                        </div>
-                      );
-                    })}
+                    {sharedReptiles.map((share) => (
+                      <SharedReptileCard key={share.id} share={share} />
+                    ))}
                   </div>
                 </>
               )}
@@ -251,6 +249,88 @@ export default function HomePage() {
     </main>
   );
 }
+
+// Memoized so toggling menuId or kicking off thumbnail backfill on one card
+// doesn't re-render the entire grid. With many reptiles + the menu open/close
+// pattern, the un-memoized version was the largest source of jank on home.
+const ReptileCard = memo(function ReptileCard({
+  reptile, menuOpen, onOpenMenu, onEdit, onAskDelete, onCloseMenu,
+}) {
+  const lastLog = getLastLogDate(reptile);
+  return (
+    <div className="reptile-card-wrap">
+      <Link to={`/reptile/${reptile.id}`} className="reptile-card">
+        {reptile.photo_thumbnail ? (
+          <img src={reptile.photo_thumbnail} alt={reptile.name} className="reptile-card-img" loading="lazy" />
+        ) : (
+          <div className="reptile-card-placeholder">🦎</div>
+        )}
+        <div className="reptile-card-info">
+          <div className="reptile-card-name">{reptile.name}</div>
+          {reptile.category && (
+            <div className="reptile-card-category">{getCategoryLabel(reptile.category)}</div>
+          )}
+          {reptile.species && (
+            <div className="reptile-card-species">{reptile.species}</div>
+          )}
+          <div className="reptile-card-lastlog">
+            {lastLog ? timeAgo(lastLog) : 'No logs yet'}
+          </div>
+        </div>
+      </Link>
+      <button
+        className="card-menu-btn"
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onOpenMenu(reptile.id); }}
+        aria-label="More options"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="12" cy="5" r="2" />
+          <circle cx="12" cy="12" r="2" />
+          <circle cx="12" cy="19" r="2" />
+        </svg>
+      </button>
+      {menuOpen && (
+        <CardMenu
+          onEdit={() => onEdit(reptile.id)}
+          onDelete={() => onAskDelete(reptile.id)}
+          onClose={onCloseMenu}
+        />
+      )}
+    </div>
+  );
+});
+
+const SharedReptileCard = memo(function SharedReptileCard({ share }) {
+  const reptile = share.reptile;
+  if (!reptile) return null;
+  const lastLog = getLastLogDate(reptile);
+  return (
+    <div className="reptile-card-wrap">
+      <Link to={`/reptile/${reptile.id}`} className="reptile-card">
+        {reptile.photo_thumbnail ? (
+          <img src={reptile.photo_thumbnail} alt={reptile.name} className="reptile-card-img" loading="lazy" />
+        ) : (
+          <div className="reptile-card-placeholder">🦎</div>
+        )}
+        <div className="reptile-card-info">
+          <div className="reptile-card-name">{reptile.name}</div>
+          {reptile.category && (
+            <div className="reptile-card-category">{getCategoryLabel(reptile.category)}</div>
+          )}
+          {reptile.species && (
+            <div className="reptile-card-species">{reptile.species}</div>
+          )}
+          <div className="shared-badge">
+            Shared by {share.owner?.display_name || 'Unknown'}
+          </div>
+          <div className="reptile-card-lastlog">
+            {lastLog ? timeAgo(lastLog) : 'No logs yet'}
+          </div>
+        </div>
+      </Link>
+    </div>
+  );
+});
 
 function QuickLogModal({ reptiles, sharedReptiles, onPick, onClose }) {
   const all = [

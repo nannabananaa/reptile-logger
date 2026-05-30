@@ -9,9 +9,34 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <title>Reptile Logger</title>
+    <style>
+      /* Instant boot spinner — painted before React loads so the screen is
+         never blank, even on slow mobile networks. React replaces the
+         contents of #root on mount, removing this. */
+      html, body { margin: 0; background: #0f1510; color: #e4e0d8; }
+      .boot-spinner-wrap {
+        position: fixed; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        flex-direction: column; gap: 16px;
+      }
+      .boot-spinner {
+        width: 36px; height: 36px;
+        border: 3px solid rgba(191, 162, 82, 0.18);
+        border-top-color: #bfa252;
+        border-radius: 50%;
+        animation: boot-spin 0.7s linear infinite;
+      }
+      .boot-spinner-logo { font-size: 32px; line-height: 1; }
+      @keyframes boot-spin { to { transform: rotate(360deg); } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot-spinner-wrap">
+        <div class="boot-spinner-logo">🦎</div>
+        <div class="boot-spinner"></div>
+      </div>
+    </div>
     <script>
       // Force any waiting service worker to activate immediately,
       // then reload so users get the latest code instead of stale cache.

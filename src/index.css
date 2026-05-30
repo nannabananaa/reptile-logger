@@ -107,6 +107,42 @@ img {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* ─── App spinner (matches inline boot spinner in index.html) ─── */
+.app-spinner-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 40vh;
+  padding: 40px 20px;
+}
+
+.app-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(191, 162, 82, 0.18);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: app-spin 0.7s linear infinite;
+}
+
+.app-spinner-logo {
+  font-size: 28px;
+  line-height: 1;
+}
+
+@keyframes app-spin {
+  to { transform: rotate(360deg); }
+}
+
+.app-spinner-fullscreen {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-primary);
+  z-index: 9999;
+}
+
 /* ─── Reptile grid ─── */
 .reptile-grid {
   display: grid;

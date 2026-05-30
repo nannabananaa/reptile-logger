@@ -12,30 +12,14 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { getVitamins, saveVitamins, calculateAge, displayTemp, displayWeight, tempUnitLabel, weightUnitLabel } from '../utils/storage';
 import { CATEGORIES, getCategoryFields, getCategoryLabel, getFieldIcon } from '../utils/categoryFields';
+import { compressPhoto, compressPhotoPair, PHOTO_THUMB_WIDTH, PHOTO_THUMB_QUALITY } from '../utils/photo';
+import Spinner from '../components/Spinner';
 
 const CHART_COLORS = {
   temperature: '#c4a44a',
   humidity: '#5b9a6b',
   weight: '#a67c52',
 };
-
-function compressPhoto(dataUrl, maxWidth = 600, quality = 0.7) {
-  return new Promise((resolve) => {
-    if (!dataUrl) { resolve(null); return; }
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const scale = Math.min(1, maxWidth / img.width);
-      canvas.width = img.width * scale;
-      canvas.height = img.height * scale;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL('image/jpeg', quality));
-    };
-    img.onerror = () => resolve(dataUrl);
-    img.src = dataUrl;
-  });
-}
 
 export default function ReptileDetail() {
   const { id } = useParams();
@@ -82,7 +66,7 @@ export default function ReptileDetail() {
       // generate one client-side and persist it so the home grid renders
       // its photo on the next visit. Fire-and-forget — never blocks the UI.
       if (reptileData?.photo && !reptileData.photo_thumbnail) {
-        compressPhoto(reptileData.photo, 240, 0.6)
+        compressPhoto(reptileData.photo, PHOTO_THUMB_WIDTH, PHOTO_THUMB_QUALITY)
           .then((thumb) => saveReptileThumbnail(id, thumb))
           .catch((err) => console.warn('Thumbnail backfill failed:', err));
       }
@@ -150,10 +134,7 @@ export default function ReptileDetail() {
   if (loading) {
     return (
       <main className="page">
-        <div className="empty-state">
-          <div className="empty-state-icon">🦎</div>
-          <p className="empty-state-text">Loading...</p>
-        </div>
+        <Spinner />
       </main>
     );
   }
@@ -1174,10 +1155,7 @@ function EditReptileModal({ reptile, onClose, onSave }) {
       };
       if (photoChanged) {
         if (photo) {
-          const [compressed, thumbnail] = await Promise.all([
-            compressPhoto(photo, 600, 0.7),
-            compressPhoto(photo, 240, 0.6),
-          ]);
+          const [compressed, thumbnail] = await compressPhotoPair(photo);
           updates.photo = compressed;
           updates.photo_thumbnail = thumbnail;
         } else {

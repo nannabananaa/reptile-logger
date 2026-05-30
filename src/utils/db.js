@@ -244,6 +244,23 @@ export async function updateReptileById(id, updates) {
   return data;
 }
 
+// Fetch the full photo column for a set of reptile IDs. Used by the home
+// page to backfill thumbnails for reptiles that pre-date photo_thumbnail.
+// Returns [{ id, photo }, ...]. Excludes reptiles with no photo.
+export async function fetchReptilePhotosByIds(ids) {
+  if (!ids || ids.length === 0) return [];
+  const { data, error } = await supabase
+    .from('reptiles')
+    .select('id, photo')
+    .in('id', ids)
+    .not('photo', 'is', null);
+  if (error) {
+    console.warn('Failed to fetch legacy reptile photos:', error);
+    return [];
+  }
+  return data || [];
+}
+
 // Best-effort thumbnail backfill, used by the detail page when it loads a
 // reptile that has a full photo but no thumbnail yet. Silently no-ops if the
 // column doesn't exist or the user lacks write permission (e.g. shared-with).

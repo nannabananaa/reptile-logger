@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
+import Spinner from './components/Spinner';
 
 // Code-split every page. The initial bundle becomes auth + router + AuthContext;
 // charts (recharts), settings, detail views etc. load on demand.
@@ -14,13 +15,7 @@ const SetupProfilePage = lazy(() => import('./pages/SetupProfilePage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 
 function LoadingScreen() {
-  return (
-    <main className="auth-page">
-      <div className="auth-loading">
-        <div className="auth-logo">🦎</div>
-      </div>
-    </main>
-  );
+  return <Spinner fullscreen />;
 }
 
 function ProtectedRoute({ children }) {
