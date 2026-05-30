@@ -4,7 +4,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import {
-  fetchReptileById, fetchLogs, updateReptileById,
+  fetchReptileById, fetchReptilePhotoById, fetchLogs, updateReptileById,
   deleteReptileById, createLog, deleteLogById,
   lookupProfileByEmail, shareReptile, fetchSharesForReptile, removeShare,
   saveReptileThumbnail,
@@ -27,8 +27,10 @@ export default function ReptileDetail() {
   const { session } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [reptile, setReptile] = useState(null);
+  const [photo, setPhoto] = useState(null);
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [logsLoading, setLogsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('logs');
   const [filter, setFilter] = useState('all');
   const [customStart, setCustomStart] = useState('');
@@ -53,29 +55,48 @@ export default function ReptileDetail() {
   const isOwner = reptile && session && reptile.user_id === session.user.id;
 
   const reload = useCallback(async () => {
-    try {
-      const [reptileData, logsData] = await Promise.all([
-        fetchReptileById(id),
-        fetchLogs(id),
-      ]);
-      setReptile(reptileData);
-      setLogs(logsData);
+    setLoading(true);
+    setLogsLoading(true);
+    setPhoto(null);
 
-      // Self-heal legacy reptiles: if there's a full photo but no thumbnail
-      // (because this reptile was created before thumbnails existed),
-      // generate one client-side and persist it so the home grid renders
-      // its photo on the next visit. Fire-and-forget — never blocks the UI.
-      if (reptileData?.photo && !reptileData.photo_thumbnail) {
-        compressPhoto(reptileData.photo, PHOTO_THUMB_WIDTH, PHOTO_THUMB_QUALITY)
-          .then((thumb) => saveReptileThumbnail(id, thumb))
-          .catch((err) => console.warn('Thumbnail backfill failed:', err));
-      }
+    // Kick off all three requests in parallel. The page renders as soon as
+    // the (small) metadata response arrives; the photo and logs each fill
+    // in on their own when ready. Previously we awaited all three together,
+    // which made the detail page feel like "nothing is happening" when
+    // either the photo column or the logs table was large.
+    const metaP = fetchReptileById(id);
+    const photoP = fetchReptilePhotoById(id);
+    const logsP = fetchLogs(id);
+
+    try {
+      const reptileData = await metaP;
+      setReptile(reptileData);
     } catch (err) {
       console.error('Failed to load reptile:', err);
       setReptile(null);
     } finally {
       setLoading(false);
     }
+
+    photoP.then((photoData) => {
+      setPhoto(photoData);
+      // Self-heal legacy reptiles: if there's a full photo but no thumbnail
+      // yet, generate one client-side and persist it so the home grid
+      // renders its photo on the next visit. Fire-and-forget.
+      if (photoData) {
+        compressPhoto(photoData, PHOTO_THUMB_WIDTH, PHOTO_THUMB_QUALITY)
+          .then((thumb) => saveReptileThumbnail(id, thumb))
+          .catch((err) => console.warn('Thumbnail backfill failed:', err));
+      }
+    });
+
+    logsP
+      .then((logsData) => setLogs(logsData))
+      .catch((err) => {
+        console.error('Failed to load logs:', err);
+        setLogs([]);
+      })
+      .finally(() => setLogsLoading(false));
   }, [id]);
 
   useEffect(() => { reload(); }, [reload]);
@@ -181,8 +202,8 @@ export default function ReptileDetail() {
     <main className="page detail-page">
       {/* Hero */}
       <div className="detail-hero">
-        {reptile.photo ? (
-          <img src={reptile.photo} alt={reptile.name} className="detail-hero-img" decoding="async" />
+        {photo ? (
+          <img src={photo} alt={reptile.name} className="detail-hero-img" decoding="async" />
         ) : (
           <div className="detail-hero-placeholder">🦎</div>
         )}
@@ -272,7 +293,11 @@ export default function ReptileDetail() {
             </div>
           )}
 
-          {filteredLogs.length === 0 ? (
+          {logsLoading ? (
+            <div style={{ padding: '32px 0' }}>
+              <Spinner />
+            </div>
+          ) : filteredLogs.length === 0 ? (
             <div className="empty-state" style={{ padding: '40px 20px' }}>
               <div className="empty-state-icon" style={{ fontSize: 48 }}>📋</div>
               <p className="empty-state-text">No logs yet</p>
@@ -297,7 +322,11 @@ export default function ReptileDetail() {
             setCustomEnd={setCustomEnd}
           />
 
-          {chartData.length < 2 ? (
+          {logsLoading ? (
+            <div style={{ padding: '32px 0' }}>
+              <Spinner />
+            </div>
+          ) : chartData.length < 2 ? (
             <div className="empty-state" style={{ padding: '40px 20px' }}>
               <div className="empty-state-icon" style={{ fontSize: 48 }}>📈</div>
               <p className="empty-state-text">
@@ -330,6 +359,7 @@ export default function ReptileDetail() {
       {showEditForm && (
         <EditReptileModal
           reptile={reptile}
+          photo={photo}
           onClose={() => setShowEditForm(false)}
           onSave={() => { setShowEditForm(false); reload(); }}
         />
@@ -1123,12 +1153,12 @@ function CategoryFieldInput({ field, value, customValue, onChange, onCustomChang
 }
 
 /* ── Edit Reptile Modal ── */
-function EditReptileModal({ reptile, onClose, onSave }) {
+function EditReptileModal({ reptile, photo: initialPhoto, onClose, onSave }) {
   const [name, setName] = useState(reptile.name);
   const [category, setCategory] = useState(reptile.category || '');
   const [species, setSpecies] = useState(reptile.species || '');
   const [dob, setDob] = useState(reptile.dob || '');
-  const [photo, setPhoto] = useState(reptile.photo);
+  const [photo, setPhoto] = useState(initialPhoto);
   const [photoChanged, setPhotoChanged] = useState(false);
   const [dualSides, setDualSides] = useState(!!reptile.dual_sides);
   const [saving, setSaving] = useState(false);

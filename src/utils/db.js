@@ -151,28 +151,43 @@ export async function fetchSharedReptiles() {
   }));
 }
 
-// Detail-page query. Explicitly lists columns instead of '*' so a future
-// migration that adds a heavy column (e.g. another big jsonb / blob) doesn't
-// silently inflate every detail-page load. photo_thumbnail is excluded — the
-// detail page only renders the full photo.
-const REPTILE_DETAIL_COLUMNS_FAST   = 'id, user_id, name, species, dob, photo, category, dual_sides';
-const REPTILE_DETAIL_COLUMNS_LEGACY = 'id, user_id, name, species, dob, photo, category';
+// Detail-page metadata. Intentionally excludes the heavy `photo` column so
+// the page can paint immediately. The photo is fetched separately via
+// fetchReptilePhotoById and rendered when it arrives.
+const REPTILE_META_COLUMNS_FAST   = 'id, user_id, name, species, dob, category, dual_sides';
+const REPTILE_META_COLUMNS_LEGACY = 'id, user_id, name, species, dob, category';
 
 export async function fetchReptileById(id) {
   const fast = await supabase
     .from('reptiles')
-    .select(REPTILE_DETAIL_COLUMNS_FAST)
+    .select(REPTILE_META_COLUMNS_FAST)
     .eq('id', id)
     .single();
   if (!fast.error) return fast.data;
   if (!isMissingColumnError(fast.error)) throw fast.error;
   const slow = await supabase
     .from('reptiles')
-    .select(REPTILE_DETAIL_COLUMNS_LEGACY)
+    .select(REPTILE_META_COLUMNS_LEGACY)
     .eq('id', id)
     .single();
   if (slow.error) throw slow.error;
   return slow.data;
+}
+
+// Loads just the full-size photo for a reptile. Separated from the metadata
+// query so the detail page renders its chrome (name, age, buttons, logs)
+// without waiting for what is often the largest column on the table.
+export async function fetchReptilePhotoById(id) {
+  const { data, error } = await supabase
+    .from('reptiles')
+    .select('photo')
+    .eq('id', id)
+    .single();
+  if (error) {
+    console.warn('Failed to fetch reptile photo:', error);
+    return null;
+  }
+  return data?.photo || null;
 }
 
 export async function createReptile({ name, species, dob, photo, photo_thumbnail, category }) {
