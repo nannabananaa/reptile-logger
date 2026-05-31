@@ -362,11 +362,10 @@ export async function createLog(reptileId, log) {
     vitamins: log.vitamins,
     notes: log.notes,
   };
-  // vet_notes and enclosure_cleaned_date live inside category_fields rather
-  // than as dedicated columns — keeps logs writeable without running any
-  // schema migration on the logs table.
+  // enclosure_cleaned_date lives inside category_fields rather than as a
+  // dedicated column — keeps logs writeable without running any schema
+  // migration on the logs table.
   const cf = { ...(log.category_fields || {}) };
-  if (log.vet_notes) cf.vet_notes = log.vet_notes;
   if (log.enclosure_cleaned_date) cf.enclosure_cleaned_date = log.enclosure_cleaned_date;
   const hasCategoryFields = Object.keys(cf).length > 0;
   const fullRow = hasCategoryFields ? { ...baseRow, category_fields: cf } : baseRow;

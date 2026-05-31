@@ -450,7 +450,7 @@ const LogCard = memo(function LogCard({ log, category, onDelete, isOwner }) {
   // have their own rendering above.
   const RESERVED_KEYS = new Set([
     'warm_temp', 'cool_temp', 'warm_humidity', 'cool_humidity', 'photo',
-    'vet_notes', 'enclosure_cleaned_date',
+    'enclosure_cleaned_date', 'bath_soak',
   ]);
   const hasCategoryData = categoryFieldDefs.some((f) => {
     if (RESERVED_KEYS.has(f.key)) return false;
@@ -460,9 +460,9 @@ const LogCard = memo(function LogCard({ log, category, onDelete, isOwner }) {
   const hasDualTemp = warmTemp != null || coolTemp != null;
   const hasDualHumidity = warmHumidity != null || coolHumidity != null;
   const photo = cf.photo;
-  // vet_notes & enclosure_cleaned_date now live in category_fields. Fall
-  // back to the legacy top-level columns for rows written by older builds.
-  const vetNotes = cf.vet_notes ?? log.vet_notes;
+  // bath_soak only renders for tortoise logs that explicitly logged it.
+  // Older tortoise logs predating the field stay clean (no "Not soaked" row).
+  const bathSoak = category === 'tortoise' && cf.bath_soak !== undefined ? cf.bath_soak : null;
   const cleanedDateRaw = cf.enclosure_cleaned_date ?? log.enclosure_cleaned_date;
   const cleanedDate = cleanedDateRaw
     ? new Date(cleanedDateRaw + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -549,6 +549,12 @@ const LogCard = memo(function LogCard({ log, category, onDelete, isOwner }) {
           <span className="log-stat-icon">🍽️</span>
           <span className={log.fed ? 'log-fed-yes' : 'log-fed-no'}>{log.fed ? 'Fed' : 'Not fed'}</span>
         </div>
+        {bathSoak !== null && (
+          <div className="log-stat">
+            <span className="log-stat-icon">💧</span>
+            <span className={bathSoak ? 'log-fed-yes' : 'log-fed-no'}>{bathSoak ? 'Soaked' : 'Not soaked'}</span>
+          </div>
+        )}
       </div>
       {(hasCategoryData || cleanedDate) && (
         <div className="log-card-category">
@@ -580,12 +586,6 @@ const LogCard = memo(function LogCard({ log, category, onDelete, isOwner }) {
         </div>
       )}
       {log.notes && <p className="log-card-notes">{log.notes}</p>}
-      {vetNotes && (
-        <div className="log-card-vet">
-          <span className="log-card-vet-label">🩺 Vet / Medical</span>
-          <p className="log-card-notes">{vetNotes}</p>
-        </div>
-      )}
     </div>
   );
 });
@@ -732,7 +732,7 @@ function LogFormModal({ reptileId, category, dualSides, onClose, onSave }) {
   const [fed, setFed] = useState(false);
   const [selectedVitamins, setSelectedVitamins] = useState([]);
   const [notes, setNotes] = useState('');
-  const [vetNotes, setVetNotes] = useState('');
+  const [bathSoak, setBathSoak] = useState(false);
   const [cleaningDate, setCleaningDate] = useState('');
   const [logPhoto, setLogPhoto] = useState(null);
   const [vitaminList, setVitaminList] = useState(getVitamins());
@@ -815,6 +815,13 @@ function LogFormModal({ reptileId, category, dualSides, onClose, onSave }) {
         if (coolHumidity) cleanedCategoryFields.cool_humidity = Number(coolHumidity);
       }
 
+      // Tortoise-only bath/soak. Always written (true OR false) so the log
+      // card can render an explicit "Soaked" / "Not soaked" for every new
+      // tortoise log. Older logs predating this field simply won't render it.
+      if (category === 'tortoise') {
+        cleanedCategoryFields.bath_soak = bathSoak;
+      }
+
       await createLog(reptileId, {
         temperature: !dualSides && temperature ? Number(temperature) : null,
         humidity: !dualSides && humidity ? Number(humidity) : null,
@@ -822,7 +829,6 @@ function LogFormModal({ reptileId, category, dualSides, onClose, onSave }) {
         fed,
         vitamins: selectedVitamins,
         notes: notes.trim() || null,
-        vet_notes: vetNotes.trim() || null,
         enclosure_cleaned_date: cleaningDate || null,
         category_fields: cleanedCategoryFields,
       });
@@ -950,16 +956,15 @@ function LogFormModal({ reptileId, category, dualSides, onClose, onSave }) {
             <textarea className="form-input form-textarea" placeholder="Any observations..." value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Vet / Medical Notes</label>
-            <textarea
-              className="form-input form-textarea"
-              placeholder="Vet visits, medications, illness, treatments..."
-              value={vetNotes}
-              onChange={(e) => setVetNotes(e.target.value)}
-              rows={3}
-            />
-          </div>
+          {category === 'tortoise' && (
+            <div className="form-group">
+              <label className="form-label">Bath / Soak</label>
+              <button type="button" className={`toggle ${bathSoak ? 'toggle-on' : ''}`} onClick={() => setBathSoak(!bathSoak)}>
+                <span className="toggle-knob" />
+                <span className="toggle-label">{bathSoak ? 'Yes' : 'No'}</span>
+              </button>
+            </div>
+          )}
 
           <div className="form-group">
             <label className="form-label">Enclosure Cleaning Date</label>
